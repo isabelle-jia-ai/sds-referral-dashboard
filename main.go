@@ -1,0 +1,92 @@
+package main
+
+import (
+	"context"
+	"embed"
+	"io/fs"
+	"net/http"
+	"os"
+
+	"go.apps.applied.dev/lib/cloudlogger"
+	"go.apps.applied.dev/lib/slacklib"
+	"github.com/gin-gonic/gin"
+	"go.uber.org/zap"
+)
+
+//go:generate sh -c "cd frontend && npm install && npm run build"
+
+//go:embed frontend/dist
+var frontendFS embed.FS
+
+func main() {
+	logger := cloudlogger.New()
+	zap.ReplaceGlobals(logger)
+	defer logger.Sync()
+
+	ctx := context.Background()
+	if err := ConnectDB(ctx); err != nil {
+		zap.L().Warn("failed to connect to database", zap.Error(err))
+	} else {
+		zap.L().Info("database connected")
+	}
+
+	bot := slacklib.New(slacklib.Config{
+		Logger: logger,
+	})
+
+	if err := bot.EnsureClient(); err != nil {
+		zap.L().Warn("slack client not ready at startup", zap.Error(err))
+	} else {
+		zap.L().Info("slack client initialized")
+	}
+
+	initGreenhouseClient()
+	RegisterSlackMonitor(bot)
+
+	// Start periodic Greenhouse sync (every 30 minutes)
+	go StartPeriodicSync(ctx, 30)
+
+	r := gin.Default()
+
+	r.GET("/health", func(c *gin.Context) {
+		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
+	})
+
+	bot.RegisterRoutes(r.Group("/slack"))
+	RegisterAPIRoutes(r, bot)
+
+	if os.Getenv("ENV") != "dev" {
+		distFS, err := fs.Sub(frontendFS, "frontend/dist")
+		if err != nil {
+			zap.L().Fatal("failed to load frontend", zap.Error(err))
+		}
+
+		serveIndex := func(c *gin.Context) {
+			data, _ := fs.ReadFile(distFS, "index.html")
+			c.Data(http.StatusOK, "text/html; charset=utf-8", data)
+		}
+
+		r.GET("/", serveIndex)
+		r.NoRoute(func(c *gin.Context) {
+			path := c.Request.URL.Path
+			if len(path) > 1 {
+				if f, err := distFS.Open(path[1:]); err == nil {
+					f.Close()
+					c.FileFromFS(path[1:], http.FS(distFS))
+					return
+				}
+			}
+			serveIndex(c)
+		})
+	}
+
+	port := os.Getenv("PORT")
+	if port == "" {
+		port = "8080"
+	}
+
+	zap.L().Info("server starting", zap.String("port", port))
+	if err := r.Run(":" + port); err != nil {
+		zap.L().Fatal("failed to start server", zap.Error(err))
+	}
+}

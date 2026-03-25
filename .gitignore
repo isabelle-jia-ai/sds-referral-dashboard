@@ -1,0 +1,8 @@
+app
+.env
+frontend/node_modules/
+frontend/dist/
+*.exe
+*.test
+*.out
+.DS_Store
