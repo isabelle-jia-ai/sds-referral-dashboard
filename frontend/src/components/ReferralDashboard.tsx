@@ -1,18 +1,17 @@
 import { useState, useEffect } from 'react'
 
 interface Referral {
-  id: number
+  id: string
   candidate_name: string
   linkedin_url: string | null
   role: string | null
-  job_greenhouse_id: number | null
+  job_id: string | null
   referrer_name: string | null
-  referrer_slack_id: string | null
   stage: string
-  greenhouse_candidate_id: number | null
-  source: string
+  app_status: string
   created_at: string
-  updated_at: string
+  company: string | null
+  current_title: string | null
 }
 
 const stageColors: Record<string, string> = {
@@ -24,6 +23,7 @@ const stageColors: Record<string, string> = {
   'Offer': 'bg-green-100 text-green-700',
   'Hired': 'bg-emerald-100 text-emerald-800',
   rejected: 'bg-red-100 text-red-700',
+  archived: 'bg-orange-100 text-orange-700',
 }
 
 function getStageBadgeClass(stage: string): string {
@@ -86,7 +86,7 @@ export default function ReferralDashboard({
       <div className="mb-6">
         <h2 className="text-2xl font-bold text-gray-900">Referrals</h2>
         <p className="text-sm text-gray-500 mt-1">
-          {filtered.length} referral{filtered.length !== 1 ? 's' : ''} tracked
+          {filtered.length} referral{filtered.length !== 1 ? 's' : ''} found
         </p>
       </div>
 
@@ -132,7 +132,7 @@ export default function ReferralDashboard({
       ) : filtered.length === 0 ? (
         <div className="text-center py-16 text-gray-400">
           <p className="text-lg">No referrals found</p>
-          <p className="text-sm mt-1">Referrals will appear here once synced from Greenhouse or captured from Slack.</p>
+          <p className="text-sm mt-1">SDS referrals from Ashby will appear here.</p>
         </div>
       ) : (
         <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
@@ -143,7 +143,7 @@ export default function ReferralDashboard({
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Referrer</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Stage</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Source</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Company</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
               </tr>
             </thead>
@@ -167,6 +167,9 @@ export default function ReferralDashboard({
                         </a>
                       )}
                     </div>
+                    {r.current_title && (
+                      <p className="text-xs text-gray-400 mt-0.5">{r.current_title}</p>
+                    )}
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-600">{r.role || '—'}</td>
                   <td className="px-4 py-3 text-sm text-gray-600">{r.referrer_name || '—'}</td>
@@ -175,11 +178,7 @@ export default function ReferralDashboard({
                       {r.stage}
                     </span>
                   </td>
-                  <td className="px-4 py-3">
-                    <span className={`text-xs font-medium ${r.source === 'greenhouse' ? 'text-green-600' : 'text-purple-600'}`}>
-                      {r.source === 'greenhouse' ? 'Greenhouse' : 'Slack'}
-                    </span>
-                  </td>
+                  <td className="px-4 py-3 text-sm text-gray-500">{r.company || '—'}</td>
                   <td className="px-4 py-3 text-sm text-gray-500">
                     {new Date(r.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                   </td>

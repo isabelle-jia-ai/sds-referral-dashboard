@@ -8,7 +8,6 @@ import (
 	"os"
 
 	"go.apps.applied.dev/lib/cloudlogger"
-	"go.apps.applied.dev/lib/slacklib"
 	"github.com/gin-gonic/gin"
 	"go.uber.org/zap"
 )
@@ -23,28 +22,7 @@ func main() {
 	zap.ReplaceGlobals(logger)
 	defer logger.Sync()
 
-	ctx := context.Background()
-	if err := ConnectDB(ctx); err != nil {
-		zap.L().Warn("failed to connect to database", zap.Error(err))
-	} else {
-		zap.L().Info("database connected")
-	}
-
-	bot := slacklib.New(slacklib.Config{
-		Logger: logger,
-	})
-
-	if err := bot.EnsureClient(); err != nil {
-		zap.L().Warn("slack client not ready at startup", zap.Error(err))
-	} else {
-		zap.L().Info("slack client initialized")
-	}
-
-	initGreenhouseClient()
-	RegisterSlackMonitor(bot)
-
-	// Start periodic Greenhouse sync (every 30 minutes)
-	go StartPeriodicSync(ctx, 30)
+	initDatalakeClient(context.Background())
 
 	r := gin.Default()
 
@@ -52,8 +30,7 @@ func main() {
 		c.JSON(http.StatusOK, gin.H{"status": "healthy"})
 	})
 
-	bot.RegisterRoutes(r.Group("/slack"))
-	RegisterAPIRoutes(r, bot)
+	RegisterAPIRoutes(r)
 
 	if os.Getenv("ENV") != "dev" {
 		distFS, err := fs.Sub(frontendFS, "frontend/dist")

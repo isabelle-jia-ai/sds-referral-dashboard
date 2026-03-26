@@ -1,60 +1,55 @@
 package main
 
 import (
-	"context"
 	"net/http"
-	"strconv"
 
 	"github.com/gin-gonic/gin"
-	"go.apps.applied.dev/lib/slacklib"
 	"go.uber.org/zap"
 )
 
-func RegisterAPIRoutes(r *gin.Engine, bot *slacklib.Bot) {
+func RegisterAPIRoutes(r *gin.Engine) {
 	api := r.Group("/api")
 
-	// Referrals
 	api.GET("/referrals", handleListReferrals())
 	api.GET("/referrals/stats", handleReferralStats())
 	api.GET("/referrals/by-stage", handleReferralsByStage())
 	api.GET("/referrals/by-role", handleReferralsByRole())
 	api.GET("/referrals/weekly", handleWeeklyTrends())
 
-	// Jobs
 	api.GET("/jobs", handleListJobs())
-	api.PATCH("/jobs/:id/priority", handleTogglePriority())
 
-	// Teams / recruiters
 	api.GET("/teams", handleGetTeams())
 	api.GET("/recruiters", handleGetRecruiters())
-
-	// Sync
-	api.GET("/sync/status", handleSyncStatus())
-	api.POST("/sync/trigger", handleTriggerSync())
 }
-
-// --- Referral handlers ---
 
 func handleListReferrals() gin.HandlerFunc {
 	return func(c *gin.Context) {
 		stage := c.Query("stage")
 		role := c.Query("role")
-		var jobID *int64
-		if j := c.Query("job_id"); j != "" {
-			if id, err := strconv.ParseInt(j, 10, 64); err == nil {
-				jobID = &id
-			}
-		}
 
-		referrals, err := ListReferrals(c.Request.Context(), stage, role, jobID)
+		resp, err := dlListReferrals(c.Request.Context(), stage, role)
 		if err != nil {
-			zap.L().Error("failed to list referrals", zap.Error(err))
+			zap.L().Error("datalake referral query failed", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
-		if referrals == nil {
-			referrals = []Referral{}
+		referrals := make([]gin.H, 0, len(resp.Rows))
+		for _, row := range resp.Rows {
+			referrals = append(referrals, gin.H{
+				"id":             toStr(row["application_id"]),
+				"candidate_name": toStr(row["candidate_name"]),
+				"linkedin_url":   toStr(row["linkedin_url"]),
+				"role":           toStr(row["role"]),
+				"job_id":         toStr(row["job_id"]),
+				"referrer_name":  toStr(row["referrer_name"]),
+				"stage":          toStr(row["stage"]),
+				"app_status":     toStr(row["app_status"]),
+				"created_at":     toStr(row["applied_at"]),
+				"company":        toStr(row["company"]),
+				"current_title":  toStr(row["current_title"]),
+				"source":         "datalake",
+			})
 		}
 
 		c.JSON(http.StatusOK, gin.H{"success": true, "referrals": referrals})
@@ -63,98 +58,130 @@ func handleListReferrals() gin.HandlerFunc {
 
 func handleReferralStats() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		stats, err := GetReferralStats(c.Request.Context())
+		statsResp, err := dlReferralStats(c.Request.Context())
 		if err != nil {
-			zap.L().Error("failed to get stats", zap.Error(err))
+			zap.L().Error("datalake stats query failed", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
-		c.JSON(http.StatusOK, gin.H{"success": true, "stats": stats})
+
+		jobsResp, err := dlListJobs(c.Request.Context())
+		if err != nil {
+			zap.L().Error("datalake jobs count query failed", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		row := statsResp.Rows[0]
+
+		stagesResp, _ := dlReferralsByStage(c.Request.Context())
+		stages := map[string]int{}
+		if stagesResp != nil {
+			for _, r := range stagesResp.Rows {
+				stages[toStr(r["stage"])] = toInt(r["count"])
+			}
+		}
+
+		c.JSON(http.StatusOK, gin.H{
+			"success": true,
+			"stats": gin.H{
+				"total_referrals": toInt(row["total_referrals"]),
+				"active":          toInt(row["active"]),
+				"rejected":        toInt(row["rejected"]),
+				"open_jobs":       len(jobsResp.Rows),
+				"priority_jobs":   0,
+				"stages":          stages,
+			},
+		})
 	}
 }
 
 func handleReferralsByStage() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		stages, err := GetReferralsByStage(c.Request.Context())
+		resp, err := dlReferralsByStage(c.Request.Context())
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+
+		stages := make([]gin.H, 0, len(resp.Rows))
+		for _, row := range resp.Rows {
+			stages = append(stages, gin.H{
+				"stage": toStr(row["stage"]),
+				"count": toInt(row["count"]),
+			})
+		}
+
 		c.JSON(http.StatusOK, gin.H{"success": true, "stages": stages})
 	}
 }
 
 func handleReferralsByRole() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		roles, err := GetReferralsByRole(c.Request.Context())
+		resp, err := dlReferralsByRole(c.Request.Context())
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+
+		roles := make([]gin.H, 0, len(resp.Rows))
+		for _, row := range resp.Rows {
+			roles = append(roles, gin.H{
+				"role":  toStr(row["role"]),
+				"count": toInt(row["count"]),
+			})
+		}
+
 		c.JSON(http.StatusOK, gin.H{"success": true, "roles": roles})
 	}
 }
 
 func handleWeeklyTrends() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		weeks, err := GetWeeklyTrends(c.Request.Context())
+		resp, err := dlWeeklyTrends(c.Request.Context())
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
+
+		weeks := make([]gin.H, 0, len(resp.Rows))
+		for _, row := range resp.Rows {
+			weeks = append(weeks, gin.H{
+				"week":  toStr(row["week"]),
+				"count": toInt(row["count"]),
+			})
+		}
+
 		c.JSON(http.StatusOK, gin.H{"success": true, "weeks": weeks})
 	}
 }
 
-// --- Job handlers ---
-
 func handleListJobs() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		status := c.DefaultQuery("status", "open")
-		priorityOnly := c.Query("priority") == "true"
-
-		jobs, err := ListJobs(c.Request.Context(), status, priorityOnly)
+		resp, err := dlJobsWithReferralCounts(c.Request.Context())
 		if err != nil {
-			zap.L().Error("failed to list jobs", zap.Error(err))
+			zap.L().Error("datalake jobs query failed", zap.Error(err))
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
-		if jobs == nil {
-			jobs = []Job{}
+		jobs := make([]gin.H, 0, len(resp.Rows))
+		for _, row := range resp.Rows {
+			jobs = append(jobs, gin.H{
+				"greenhouse_id":  toStr(row["id"]),
+				"title":          toStr(row["title"]),
+				"status":         toStr(row["status"]),
+				"department":     toStr(row["department_id"]),
+				"location":       toStr(row["location_id"]),
+				"opened_at":      toStr(row["opened_at"]),
+				"referral_count": toInt(row["referral_count"]),
+				"is_priority":    false,
+			})
 		}
 
 		c.JSON(http.StatusOK, gin.H{"success": true, "jobs": jobs})
 	}
 }
-
-func handleTogglePriority() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		ghID, err := strconv.ParseInt(c.Param("id"), 10, 64)
-		if err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid job ID"})
-			return
-		}
-
-		var req struct {
-			IsPriority bool `json:"is_priority"`
-		}
-		if err := c.ShouldBindJSON(&req); err != nil {
-			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-			return
-		}
-
-		if err := SetJobPriority(c.Request.Context(), ghID, req.IsPriority); err != nil {
-			zap.L().Error("failed to set priority", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-
-		c.JSON(http.StatusOK, gin.H{"success": true})
-	}
-}
-
-// --- Team / recruiter handlers ---
 
 func handleGetTeams() gin.HandlerFunc {
 	return func(c *gin.Context) {
@@ -170,26 +197,5 @@ func handleGetRecruiters() gin.HandlerFunc {
 			result[i] = gin.H{"name": r.RecruiterName, "email": r.RecruiterEmail, "team": r.Team}
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "recruiters": result})
-	}
-}
-
-// --- Sync handlers ---
-
-func handleSyncStatus() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		last, err := GetLastSync(c.Request.Context())
-		if err != nil {
-			zap.L().Error("failed to get sync status", zap.Error(err))
-			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-			return
-		}
-		c.JSON(http.StatusOK, gin.H{"success": true, "last_sync": last})
-	}
-}
-
-func handleTriggerSync() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		go RunFullSync(context.Background())
-		c.JSON(http.StatusOK, gin.H{"success": true, "message": "sync started"})
 	}
 }

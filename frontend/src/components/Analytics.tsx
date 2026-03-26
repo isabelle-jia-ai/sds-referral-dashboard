@@ -2,9 +2,9 @@ import { useState, useEffect } from 'react'
 
 interface Stats {
   total_referrals: number
-  stages: Record<string, number>
+  active: number
+  rejected: number
   open_jobs: number
-  priority_jobs: number
 }
 
 interface StageCount {
@@ -75,15 +75,13 @@ export default function Analytics({ onStageClick }: { onStageClick: (stage: stri
         <p className="text-sm text-gray-500 mt-1">Referral pipeline overview</p>
       </div>
 
-      {/* Summary cards */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
         <SummaryCard label="Total Referrals" value={stats?.total_referrals ?? 0} color="blue" />
-        <SummaryCard label="Open Positions" value={stats?.open_jobs ?? 0} color="green" />
-        <SummaryCard label="Priority Roles" value={stats?.priority_jobs ?? 0} color="amber" />
-        <SummaryCard label="Active Stages" value={stages.length} color="purple" />
+        <SummaryCard label="Active" value={stats?.active ?? 0} color="green" />
+        <SummaryCard label="Rejected" value={stats?.rejected ?? 0} color="red" />
+        <SummaryCard label="Open Positions" value={stats?.open_jobs ?? 0} color="purple" />
       </div>
 
-      {/* Stage funnel */}
       <div className="bg-white rounded-xl border border-gray-200 p-6">
         <h3 className="text-lg font-semibold text-gray-900 mb-4">Referrals by Stage</h3>
         {stages.length === 0 ? (
@@ -115,7 +113,6 @@ export default function Analytics({ onStageClick }: { onStageClick: (stage: stri
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        {/* Referrals by role */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Referrals by Role</h3>
           {roles.length === 0 ? (
@@ -142,7 +139,6 @@ export default function Analytics({ onStageClick }: { onStageClick: (stage: stri
           )}
         </div>
 
-        {/* Weekly trend */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h3 className="text-lg font-semibold text-gray-900 mb-4">Weekly Trend (12 weeks)</h3>
           {weeks.length === 0 ? (
@@ -173,7 +169,7 @@ function SummaryCard({ label, value, color }: { label: string; value: number; co
   const colorMap: Record<string, string> = {
     blue: 'bg-blue-50 text-blue-700 border-blue-200',
     green: 'bg-green-50 text-green-700 border-green-200',
-    amber: 'bg-amber-50 text-amber-700 border-amber-200',
+    red: 'bg-red-50 text-red-700 border-red-200',
     purple: 'bg-purple-50 text-purple-700 border-purple-200',
   }
 

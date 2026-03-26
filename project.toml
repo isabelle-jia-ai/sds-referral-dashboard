@@ -1,10 +1,10 @@
 name = "sds-referral-dashboard"
 enable_filestore = false
 enable_gcs_fuse = false
-enable_postgres = true
+enable_postgres = false
 enable_mysql = false
 enable_api_gateway = false
-enable_slack = true
+enable_slack = false
 enable_secrets = true
 
 [metadata]
