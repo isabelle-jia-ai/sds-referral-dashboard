@@ -4,6 +4,7 @@ const tabs: { id: Tab; label: string; icon: string }[] = [
   { id: 'referrals', label: 'Referrals', icon: '👥' },
   { id: 'priority-roles', label: 'Open Roles', icon: '🎯' },
   { id: 'analytics', label: 'Analytics', icon: '📊' },
+  { id: 'refer', label: 'Refer a Friend', icon: '🤝' },
 ]
 
 export default function Sidebar({ activeTab, setActiveTab }: { activeTab: Tab; setActiveTab: (tab: Tab) => void }) {

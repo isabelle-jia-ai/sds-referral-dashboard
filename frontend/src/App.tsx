@@ -3,10 +3,11 @@ import Sidebar from './components/Sidebar'
 import ReferralDashboard from './components/ReferralDashboard'
 import PriorityRoles from './components/PriorityRoles'
 import Analytics from './components/Analytics'
+import ReferAFriend from './components/ReferAFriend'
 
-export type Tab = 'referrals' | 'priority-roles' | 'analytics'
+export type Tab = 'referrals' | 'priority-roles' | 'analytics' | 'refer'
 
-const validTabs: Tab[] = ['referrals', 'priority-roles', 'analytics']
+const validTabs: Tab[] = ['referrals', 'priority-roles', 'analytics', 'refer']
 
 function getInitialTab(): Tab {
   const hash = window.location.hash.replace('#', '')
@@ -38,6 +39,8 @@ function App() {
         return <PriorityRoles />
       case 'analytics':
         return <Analytics onStageClick={navigateToReferrals} />
+      case 'refer':
+        return <ReferAFriend />
       default:
         return <ReferralDashboard initialStageFilter={initialFilter} onFilterApplied={clearFilter} />
     }

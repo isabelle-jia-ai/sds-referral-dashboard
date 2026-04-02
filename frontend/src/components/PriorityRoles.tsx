@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react'
 
 interface Job {
-  greenhouse_id: string
+  id: string
   title: string
   department: string | null
   status: string
   referral_count: number
   location: string | null
-  opened_at: string | null
+  job_url: string | null
 }
 
 export default function PriorityRoles() {
@@ -74,14 +74,22 @@ export default function PriorityRoles() {
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {filtered.map((job) => (
-            <div
-              key={job.greenhouse_id}
-              className="bg-white rounded-xl border border-gray-200 p-5 transition-shadow hover:shadow-md"
+            <a
+              key={job.id}
+              href={job.job_url || 'https://www.applied.co/careers'}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="bg-white rounded-xl border border-gray-200 p-5 transition-all hover:shadow-md hover:border-blue-300 group block"
             >
               <div className="mb-3">
-                <h3 className="font-semibold text-gray-900 text-sm truncate" title={job.title}>
-                  {job.title}
-                </h3>
+                <div className="flex items-center justify-between">
+                  <h3 className="font-semibold text-gray-900 text-sm truncate group-hover:text-blue-600 transition-colors" title={job.title}>
+                    {job.title}
+                  </h3>
+                  <svg className="w-4 h-4 text-gray-300 group-hover:text-blue-500 flex-shrink-0 ml-2 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+                  </svg>
+                </div>
                 {job.department && (
                   <p className="text-xs text-gray-500 mt-0.5">{job.department}</p>
                 )}
@@ -95,15 +103,7 @@ export default function PriorityRoles() {
                 <span className="text-lg font-bold text-gray-900">{job.referral_count}</span>
                 <span className="text-xs text-gray-500">referral{job.referral_count !== 1 ? 's' : ''}</span>
               </div>
-
-              {job.opened_at && (
-                <div className="mt-3 pt-3 border-t border-gray-100">
-                  <span className="text-xs text-gray-400">
-                    Opened {new Date(job.opened_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
-                  </span>
-                </div>
-              )}
-            </div>
+            </a>
           ))}
         </div>
       )}

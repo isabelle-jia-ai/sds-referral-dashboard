@@ -23,6 +23,7 @@ func main() {
 	defer logger.Sync()
 
 	initDatalakeClient(context.Background())
+	initGreenhouseClient()
 
 	r := gin.Default()
 

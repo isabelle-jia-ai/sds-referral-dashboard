@@ -17,8 +17,8 @@ interface RoleCount {
   count: number
 }
 
-interface WeeklyCount {
-  week: string
+interface QuarterlyCount {
+  quarter: string
   count: number
 }
 
@@ -26,29 +26,29 @@ export default function Analytics({ onStageClick }: { onStageClick: (stage: stri
   const [stats, setStats] = useState<Stats | null>(null)
   const [stages, setStages] = useState<StageCount[]>([])
   const [roles, setRoles] = useState<RoleCount[]>([])
-  const [weeks, setWeeks] = useState<WeeklyCount[]>([])
+  const [quarters, setQuarters] = useState<QuarterlyCount[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchAll = async () => {
       setLoading(true)
       try {
-        const [statsRes, stagesRes, rolesRes, weeksRes] = await Promise.all([
+        const [statsRes, stagesRes, rolesRes, quartersRes] = await Promise.all([
           fetch('/api/referrals/stats'),
           fetch('/api/referrals/by-stage'),
           fetch('/api/referrals/by-role'),
-          fetch('/api/referrals/weekly'),
+          fetch('/api/referrals/quarterly'),
         ])
-        const [statsData, stagesData, rolesData, weeksData] = await Promise.all([
+        const [statsData, stagesData, rolesData, quartersData] = await Promise.all([
           statsRes.json(),
           stagesRes.json(),
           rolesRes.json(),
-          weeksRes.json(),
+          quartersRes.json(),
         ])
         setStats(statsData.stats || null)
         setStages(stagesData.stages || [])
         setRoles(rolesData.roles || [])
-        setWeeks(weeksData.weeks || [])
+        setQuarters(quartersData.quarters || [])
       } catch { /* ignore */ } finally {
         setLoading(false)
       }
@@ -66,7 +66,7 @@ export default function Analytics({ onStageClick }: { onStageClick: (stage: stri
 
   const maxStageCount = Math.max(...stages.map((s) => s.count), 1)
   const maxRoleCount = Math.max(...roles.map((r) => r.count), 1)
-  const maxWeekCount = Math.max(...weeks.map((w) => w.count), 1)
+  const maxQuarterCount = Math.max(...quarters.map((q) => q.count), 1)
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-8">
@@ -140,20 +140,20 @@ export default function Analytics({ onStageClick }: { onStageClick: (stage: stri
         </div>
 
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Weekly Trend (12 weeks)</h3>
-          {weeks.length === 0 ? (
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Quarterly Trends</h3>
+          {quarters.length === 0 ? (
             <p className="text-gray-400 text-sm">No data yet</p>
           ) : (
             <div className="flex items-end gap-2 h-48">
-              {weeks.map((w) => (
-                <div key={w.week} className="flex-1 flex flex-col items-center gap-1">
-                  <span className="text-xs font-medium text-gray-700">{w.count}</span>
+              {quarters.map((q) => (
+                <div key={q.quarter} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-xs font-medium text-gray-700">{q.count}</span>
                   <div
                     className="w-full bg-blue-400 rounded-t-md transition-all min-h-[4px]"
-                    style={{ height: `${(w.count / maxWeekCount) * 100}%` }}
+                    style={{ height: `${(q.count / maxQuarterCount) * 100}%` }}
                   />
-                  <span className="text-[10px] text-gray-400 -rotate-45 origin-top-left whitespace-nowrap">
-                    {formatWeek(w.week)}
+                  <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                    {q.quarter}
                   </span>
                 </div>
               ))}
@@ -181,7 +181,3 @@ function SummaryCard({ label, value, color }: { label: string; value: number; co
   )
 }
 
-function formatWeek(dateStr: string): string {
-  const d = new Date(dateStr + 'T00:00:00')
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
-}

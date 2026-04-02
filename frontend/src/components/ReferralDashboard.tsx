@@ -15,15 +15,18 @@ interface Referral {
 }
 
 const stageColors: Record<string, string> = {
-  submitted: 'bg-gray-100 text-gray-700',
+  'Submitted': 'bg-gray-100 text-gray-700',
   'Application Review': 'bg-blue-100 text-blue-700',
-  'Phone Screen': 'bg-indigo-100 text-indigo-700',
-  'On-site Interview': 'bg-purple-100 text-purple-700',
-  'Technical Interview': 'bg-violet-100 text-violet-700',
+  'Initial Phone Screen': 'bg-sky-100 text-sky-700',
+  'Technical Phone Screen': 'bg-indigo-100 text-indigo-700',
+  'Pre-Interview Sell Chat': 'bg-cyan-100 text-cyan-700',
+  'Onsite and Leads Chat': 'bg-purple-100 text-purple-700',
+  'Post-Interview Sell Chat': 'bg-fuchsia-100 text-fuchsia-700',
+  'Leads Chat': 'bg-violet-100 text-violet-700',
   'Offer': 'bg-green-100 text-green-700',
   'Hired': 'bg-emerald-100 text-emerald-800',
-  rejected: 'bg-red-100 text-red-700',
-  archived: 'bg-orange-100 text-orange-700',
+  'Rejected': 'bg-red-100 text-red-700',
+  'Archived': 'bg-orange-100 text-orange-700',
 }
 
 function getStageBadgeClass(stage: string): string {

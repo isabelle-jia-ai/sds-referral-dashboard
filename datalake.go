@@ -18,7 +18,16 @@ const (
 	datalakeServiceURL = "https://datalake.experimental.apps.applied.dev"
 )
 
-const sdsFilter = `(LOWER(j.title) LIKE '%sds%' OR LOWER(j.title) LIKE '%self-driving%' OR LOWER(j.title) LIKE '%self driving%')`
+const usLocationID = "b1cf6f36-d768-4505-9f6b-52c872e32b96"
+
+const sdsFilter = `(LOWER(j.title) LIKE '%sds%' OR LOWER(j.title) LIKE '%self-driving%' OR LOWER(j.title) LIKE '%self driving%')
+	AND j.location_id = '` + usLocationID + `'
+	AND j.title NOT LIKE '[TEST]%'`
+
+const referralFilter = `(
+	LOWER(a.source->>'title') LIKE '%referral%'
+	OR LOWER(a.source->'sourceType'->>'title') LIKE '%referral%'
+)`
 
 type datalakeClient struct {
 	apiKey     string
@@ -120,15 +129,14 @@ func dlListJobs(ctx context.Context) (*dlResponse, error) {
 }
 
 func dlListReferrals(ctx context.Context, stage, role string) (*dlResponse, error) {
-	where := `WHERE ` + sdsFilter + `
-		AND (
-			LOWER(c.source_details->>'sourceType') LIKE '%referral%'
-			OR LOWER(c.source_details->>'sourceSubtype') LIKE '%referral%'
-			OR LOWER(c.source_details->>'sourceName') LIKE '%referral%'
-		)`
+	where := `WHERE ` + sdsFilter + ` AND ` + referralFilter
 
 	if stage != "" {
-		where += fmt.Sprintf(` AND LOWER(COALESCE(a.current_stage->>'name', 'submitted')) = LOWER('%s')`, stage)
+		where += fmt.Sprintf(` AND LOWER(CASE
+			WHEN a.status = 'Archived' AND a.archive_reason->>'text' IS NOT NULL THEN 'Rejected'
+			WHEN a.status = 'Archived' THEN 'Archived'
+			ELSE COALESCE(a.current_stage->>'title', 'Submitted')
+		END) = LOWER('%s')`, stage)
 	}
 	if role != "" {
 		where += fmt.Sprintf(` AND LOWER(j.title) LIKE LOWER('%%%s%%')`, role)
@@ -143,18 +151,19 @@ func dlListReferrals(ctx context.Context, stage, role string) (*dlResponse, erro
 			j.id AS job_id,
 			COALESCE(u.first_name || ' ' || u.last_name, '') AS referrer_name,
 			CASE
-				WHEN a.status = 'Archived' AND a.archive_reason->>'reasonTitle' IS NOT NULL THEN 'rejected'
-				WHEN a.status = 'Archived' THEN 'archived'
-				ELSE COALESCE(a.current_stage->>'name', 'submitted')
+				WHEN a.status = 'Archived' AND a.archive_reason->>'text' IS NOT NULL THEN 'Rejected'
+				WHEN a.status = 'Archived' THEN 'Archived'
+				ELSE COALESCE(a.current_stage->>'title', 'Submitted')
 			END AS stage,
 			a.status AS app_status,
 			a.created_at AS applied_at,
 			c.company,
-			c.title AS current_title
+			c.title AS current_title,
+			a.source->>'title' AS source_name
 		FROM ashby_applications a
 		JOIN ashby_candidates c ON a.candidate_id = c.id
 		JOIN ashby_jobs j ON a.job_id = j.id
-		LEFT JOIN ashby_users u ON a.credited_to_user_id = u.id
+		LEFT JOIN ashby_users u ON a.credited_to_user_id = u.id AND a.credited_to_user_id != ''
 		`+where+`
 		ORDER BY a.created_at DESC
 	`, 60)
@@ -164,18 +173,11 @@ func dlReferralStats(ctx context.Context) (*dlResponse, error) {
 	return dlClient.query(ctx, `
 		SELECT
 			COUNT(*) AS total_referrals,
-			COUNT(CASE WHEN a.status = 'Active' THEN 1 END) AS active,
-			COUNT(CASE WHEN a.status = 'Archived' AND a.archive_reason->>'reasonTitle' IS NOT NULL THEN 1 END) AS rejected,
-			COUNT(CASE WHEN a.status = 'Archived' AND a.archive_reason->>'reasonTitle' IS NULL THEN 1 END) AS archived
+			COUNT(CASE WHEN a.status != 'Archived' THEN 1 END) AS active,
+			COUNT(CASE WHEN a.status = 'Archived' AND a.archive_reason->>'text' IS NOT NULL THEN 1 END) AS rejected
 		FROM ashby_applications a
-		JOIN ashby_candidates c ON a.candidate_id = c.id
 		JOIN ashby_jobs j ON a.job_id = j.id
-		WHERE `+sdsFilter+`
-		AND (
-			LOWER(c.source_details->>'sourceType') LIKE '%referral%'
-			OR LOWER(c.source_details->>'sourceSubtype') LIKE '%referral%'
-			OR LOWER(c.source_details->>'sourceName') LIKE '%referral%'
-		)
+		WHERE `+sdsFilter+` AND `+referralFilter+`
 	`, 60)
 }
 
@@ -183,20 +185,14 @@ func dlReferralsByStage(ctx context.Context) (*dlResponse, error) {
 	return dlClient.query(ctx, `
 		SELECT
 			CASE
-				WHEN a.status = 'Archived' AND a.archive_reason->>'reasonTitle' IS NOT NULL THEN 'rejected'
-				WHEN a.status = 'Archived' THEN 'archived'
-				ELSE COALESCE(a.current_stage->>'name', 'submitted')
+				WHEN a.status = 'Archived' AND a.archive_reason->>'text' IS NOT NULL THEN 'Rejected'
+				WHEN a.status = 'Archived' THEN 'Archived'
+				ELSE COALESCE(a.current_stage->>'title', 'Submitted')
 			END AS stage,
 			COUNT(*) AS count
 		FROM ashby_applications a
-		JOIN ashby_candidates c ON a.candidate_id = c.id
 		JOIN ashby_jobs j ON a.job_id = j.id
-		WHERE `+sdsFilter+`
-		AND (
-			LOWER(c.source_details->>'sourceType') LIKE '%referral%'
-			OR LOWER(c.source_details->>'sourceSubtype') LIKE '%referral%'
-			OR LOWER(c.source_details->>'sourceName') LIKE '%referral%'
-		)
+		WHERE `+sdsFilter+` AND `+referralFilter+`
 		GROUP BY stage
 		ORDER BY count DESC
 	`, 60)
@@ -206,36 +202,24 @@ func dlReferralsByRole(ctx context.Context) (*dlResponse, error) {
 	return dlClient.query(ctx, `
 		SELECT j.title AS role, COUNT(*) AS count
 		FROM ashby_applications a
-		JOIN ashby_candidates c ON a.candidate_id = c.id
 		JOIN ashby_jobs j ON a.job_id = j.id
-		WHERE `+sdsFilter+`
-		AND (
-			LOWER(c.source_details->>'sourceType') LIKE '%referral%'
-			OR LOWER(c.source_details->>'sourceSubtype') LIKE '%referral%'
-			OR LOWER(c.source_details->>'sourceName') LIKE '%referral%'
-		)
+		WHERE `+sdsFilter+` AND `+referralFilter+`
 		GROUP BY j.title
 		ORDER BY count DESC
 	`, 60)
 }
 
-func dlWeeklyTrends(ctx context.Context) (*dlResponse, error) {
+func dlQuarterlyTrends(ctx context.Context) (*dlResponse, error) {
 	return dlClient.query(ctx, `
 		SELECT
-			to_char(date_trunc('week', a.created_at), 'YYYY-MM-DD') AS week,
+			to_char(date_trunc('quarter', a.created_at), 'YYYY-"Q"Q') AS quarter,
 			COUNT(*) AS count
 		FROM ashby_applications a
-		JOIN ashby_candidates c ON a.candidate_id = c.id
 		JOIN ashby_jobs j ON a.job_id = j.id
-		WHERE `+sdsFilter+`
-		AND (
-			LOWER(c.source_details->>'sourceType') LIKE '%referral%'
-			OR LOWER(c.source_details->>'sourceSubtype') LIKE '%referral%'
-			OR LOWER(c.source_details->>'sourceName') LIKE '%referral%'
-		)
-		AND a.created_at >= NOW() - INTERVAL '12 weeks'
-		GROUP BY date_trunc('week', a.created_at)
-		ORDER BY week
+		WHERE `+sdsFilter+` AND `+referralFilter+`
+		AND a.created_at >= '2025-01-01'
+		GROUP BY date_trunc('quarter', a.created_at)
+		ORDER BY quarter
 	`, 60)
 }
 
@@ -248,17 +232,13 @@ func dlJobsWithReferralCounts(ctx context.Context) (*dlResponse, error) {
 			j.department_id,
 			j.location_id,
 			j.opened_at,
+			j.job_posting_ids,
 			COALESCE(ref.cnt, 0) AS referral_count
 		FROM ashby_jobs j
 		LEFT JOIN (
 			SELECT a.job_id, COUNT(*) AS cnt
 			FROM ashby_applications a
-			JOIN ashby_candidates c ON a.candidate_id = c.id
-			WHERE (
-				LOWER(c.source_details->>'sourceType') LIKE '%referral%'
-				OR LOWER(c.source_details->>'sourceSubtype') LIKE '%referral%'
-				OR LOWER(c.source_details->>'sourceName') LIKE '%referral%'
-			)
+			WHERE `+referralFilter+`
 			GROUP BY a.job_id
 		) ref ON ref.job_id = j.id
 		WHERE j.status = 'Open' AND `+sdsFilter+`

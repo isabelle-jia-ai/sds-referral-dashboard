@@ -14,12 +14,16 @@ func RegisterAPIRoutes(r *gin.Engine) {
 	api.GET("/referrals/stats", handleReferralStats())
 	api.GET("/referrals/by-stage", handleReferralsByStage())
 	api.GET("/referrals/by-role", handleReferralsByRole())
-	api.GET("/referrals/weekly", handleWeeklyTrends())
+	api.GET("/referrals/quarterly", handleQuarterlyTrends())
 
 	api.GET("/jobs", handleListJobs())
 
 	api.GET("/teams", handleGetTeams())
 	api.GET("/recruiters", handleGetRecruiters())
+
+	api.GET("/refer/form", handleReferralForm())
+	api.GET("/refer/jobs", handleReferralJobs())
+	api.POST("/refer", handleSubmitReferral())
 }
 
 func handleListReferrals() gin.HandlerFunc {
@@ -136,23 +140,23 @@ func handleReferralsByRole() gin.HandlerFunc {
 	}
 }
 
-func handleWeeklyTrends() gin.HandlerFunc {
+func handleQuarterlyTrends() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		resp, err := dlWeeklyTrends(c.Request.Context())
+		resp, err := dlQuarterlyTrends(c.Request.Context())
 		if err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 			return
 		}
 
-		weeks := make([]gin.H, 0, len(resp.Rows))
+		quarters := make([]gin.H, 0, len(resp.Rows))
 		for _, row := range resp.Rows {
-			weeks = append(weeks, gin.H{
-				"week":  toStr(row["week"]),
-				"count": toInt(row["count"]),
+			quarters = append(quarters, gin.H{
+				"quarter": toStr(row["quarter"]),
+				"count":   toInt(row["count"]),
 			})
 		}
 
-		c.JSON(http.StatusOK, gin.H{"success": true, "weeks": weeks})
+		c.JSON(http.StatusOK, gin.H{"success": true, "quarters": quarters})
 	}
 }
 
@@ -167,15 +171,21 @@ func handleListJobs() gin.HandlerFunc {
 
 		jobs := make([]gin.H, 0, len(resp.Rows))
 		for _, row := range resp.Rows {
+			title := toStr(row["title"])
+			var jobURL *string
+			if ghClient != nil {
+				if u := ghClient.JobURL(c.Request.Context(), title); u != "" {
+					jobURL = &u
+				}
+			}
 			jobs = append(jobs, gin.H{
-				"greenhouse_id":  toStr(row["id"]),
-				"title":          toStr(row["title"]),
+				"id":             toStr(row["id"]),
+				"title":          title,
 				"status":         toStr(row["status"]),
 				"department":     toStr(row["department_id"]),
 				"location":       toStr(row["location_id"]),
-				"opened_at":      toStr(row["opened_at"]),
 				"referral_count": toInt(row["referral_count"]),
-				"is_priority":    false,
+				"job_url":        jobURL,
 			})
 		}
 
@@ -197,5 +207,70 @@ func handleGetRecruiters() gin.HandlerFunc {
 			result[i] = gin.H{"name": r.RecruiterName, "email": r.RecruiterEmail, "team": r.Team}
 		}
 		c.JSON(http.StatusOK, gin.H{"success": true, "recruiters": result})
+	}
+}
+
+func handleReferralForm() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		schema := gin.H{
+			"success": true,
+			"fields": []gin.H{
+				{"path": "referrer_email", "title": "Your Work Email", "type": "email", "required": true},
+				{"path": "candidate_name", "title": "Candidate Full Name", "type": "text", "required": true},
+				{"path": "candidate_email", "title": "Candidate Email", "type": "email", "required": true},
+				{"path": "linkedin_url", "title": "LinkedIn URL", "type": "url", "required": false},
+				{"path": "phone", "title": "Phone Number", "type": "tel", "required": false},
+				{"path": "job_id", "title": "Job", "type": "select", "required": true},
+				{"path": "relationship", "title": "How do you know this person?", "type": "select", "required": false},
+				{"path": "note", "title": "Why are you recommending them?", "type": "textarea", "required": false},
+			},
+		}
+		c.JSON(http.StatusOK, schema)
+	}
+}
+
+func handleReferralJobs() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		resp, err := dlListJobs(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		jobs := make([]gin.H, 0, len(resp.Rows))
+		for _, row := range resp.Rows {
+			jobs = append(jobs, gin.H{
+				"id":    toStr(row["id"]),
+				"title": toStr(row["title"]),
+			})
+		}
+		c.JSON(http.StatusOK, gin.H{"success": true, "jobs": jobs})
+	}
+}
+
+func handleSubmitReferral() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if ghClient == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Greenhouse API not configured. Set GREENHOUSE_API_KEY to enable referral submissions."})
+			return
+		}
+
+		var sub referralSubmission
+		if err := c.ShouldBindJSON(&sub); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid request: " + err.Error()})
+			return
+		}
+
+		if sub.ReferrerEmail == "" || sub.CandidateName == "" || sub.CandidateEmail == "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "referrer_email, candidate_name, and candidate_email are required"})
+			return
+		}
+
+		raw, err := ghClient.submitReferral(c.Request.Context(), sub)
+		if err != nil {
+			zap.L().Error("greenhouse referral submission failed", zap.Error(err))
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+		c.Data(http.StatusOK, "application/json", raw)
 	}
 }
