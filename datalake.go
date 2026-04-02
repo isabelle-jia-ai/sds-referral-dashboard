@@ -146,7 +146,7 @@ func dlListReferrals(ctx context.Context, stage, role string) (*dlResponse, erro
 		SELECT
 			a.id AS application_id,
 			c.name AS candidate_name,
-			c.linkedin_url,
+			c.primary_email,
 			j.title AS role,
 			j.id AS job_id,
 			COALESCE(u.first_name || ' ' || u.last_name, '') AS referrer_name,

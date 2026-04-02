@@ -28,6 +28,9 @@ type greenhouseClient struct {
 	titleURLMap map[string]string // normalised title -> absolute_url
 	titleIDMap  map[string]int    // normalised title -> greenhouse numeric job id
 	cachedAt    time.Time
+
+	linkedInMu    sync.RWMutex
+	linkedInCache map[string]string // email -> linkedin URL (empty string = looked up, none found)
 }
 
 var ghClient *greenhouseClient
@@ -205,6 +208,103 @@ func (c *greenhouseClient) lookupUserByEmail(ctx context.Context, email string) 
 		return "", fmt.Errorf("no greenhouse user found for %s", email)
 	}
 	return fmt.Sprintf("%d", users[0].ID), nil
+}
+
+// LookupLinkedIn searches Greenhouse for a candidate by email and returns their
+// LinkedIn URL from social_media_addresses. Results are cached indefinitely.
+func (c *greenhouseClient) LookupLinkedIn(ctx context.Context, email string) string {
+	if c.apiKey == "" || email == "" {
+		return ""
+	}
+
+	c.linkedInMu.RLock()
+	if url, ok := c.linkedInCache[email]; ok {
+		c.linkedInMu.RUnlock()
+		return url
+	}
+	c.linkedInMu.RUnlock()
+
+	raw, err := c.harvestGet(ctx, "/candidates?email="+email)
+	if err != nil {
+		zap.L().Debug("linkedin lookup failed", zap.String("email", email), zap.Error(err))
+		return ""
+	}
+
+	var candidates []struct {
+		SocialMedia []struct {
+			Value string `json:"value"`
+		} `json:"social_media_addresses"`
+	}
+	if err := json.Unmarshal(raw, &candidates); err != nil {
+		return ""
+	}
+
+	linkedIn := ""
+	for _, cand := range candidates {
+		for _, sm := range cand.SocialMedia {
+			if strings.Contains(sm.Value, "linkedin.com") {
+				linkedIn = sm.Value
+				break
+			}
+		}
+		if linkedIn != "" {
+			break
+		}
+	}
+
+	c.linkedInMu.Lock()
+	if c.linkedInCache == nil {
+		c.linkedInCache = make(map[string]string)
+	}
+	c.linkedInCache[email] = linkedIn
+	c.linkedInMu.Unlock()
+
+	return linkedIn
+}
+
+// BulkLookupLinkedIn looks up LinkedIn URLs for a batch of emails concurrently
+// with bounded parallelism to respect rate limits.
+func (c *greenhouseClient) BulkLookupLinkedIn(ctx context.Context, emails []string) map[string]string {
+	result := make(map[string]string, len(emails))
+	if c.apiKey == "" {
+		return result
+	}
+
+	var uncached []string
+	c.linkedInMu.RLock()
+	for _, email := range emails {
+		if url, ok := c.linkedInCache[email]; ok {
+			result[email] = url
+		} else if email != "" {
+			uncached = append(uncached, email)
+		}
+	}
+	c.linkedInMu.RUnlock()
+
+	if len(uncached) == 0 {
+		return result
+	}
+
+	sem := make(chan struct{}, 5)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, email := range uncached {
+		wg.Add(1)
+		go func(e string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			url := c.LookupLinkedIn(ctx, e)
+			mu.Lock()
+			result[e] = url
+			mu.Unlock()
+		}(email)
+	}
+	wg.Wait()
+
+	return result
 }
 
 type referralSubmission struct {
