@@ -173,7 +173,7 @@ func handleListJobs() gin.HandlerFunc {
 		for _, row := range resp.Rows {
 			title := toStr(row["title"])
 			var jobURL *string
-			if ghClient != nil {
+			if ghClient != nil && ghClient.apiKey != "" {
 				if u := ghClient.JobURL(c.Request.Context(), title); u != "" {
 					jobURL = &u
 				}
@@ -249,7 +249,7 @@ func handleReferralJobs() gin.HandlerFunc {
 
 func handleSubmitReferral() gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if ghClient == nil {
+		if ghClient == nil || ghClient.apiKey == "" {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "Greenhouse API not configured. Set GREENHOUSE_API_KEY to enable referral submissions."})
 			return
 		}

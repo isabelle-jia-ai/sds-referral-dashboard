@@ -15,9 +15,9 @@ import (
 )
 
 const (
-	ghBoardAPI   = "https://boards-api.greenhouse.io/v1/boards/appliedintuition/jobs"
-	ghHarvestAPI = "https://harvest.greenhouse.io/v1"
-	ghSourceID   = 4000077005
+	ghHarvestAPI  = "https://harvest.greenhouse.io/v1"
+	ghInternalURL = "https://app.greenhouse.io/sdash"
+	ghSourceID    = 4000077005
 )
 
 type greenhouseClient struct {
@@ -33,35 +33,35 @@ type greenhouseClient struct {
 var ghClient *greenhouseClient
 
 func initGreenhouseClient() {
-	key := os.Getenv("GREENHOUSE_API_KEY")
-	if key == "" {
-		zap.L().Warn("GREENHOUSE_API_KEY not set, Greenhouse integration disabled")
-		return
-	}
 	ghClient = &greenhouseClient{
-		apiKey: key,
-		http:   &http.Client{Timeout: 30 * time.Second},
+		http: &http.Client{Timeout: 30 * time.Second},
 	}
-	zap.L().Info("greenhouse client initialized")
+	key := os.Getenv("GREENHOUSE_API_KEY")
+	if key != "" {
+		ghClient.apiKey = key
+		zap.L().Info("greenhouse client initialized (board + harvest)")
+	} else {
+		zap.L().Info("greenhouse client initialized (board only, referral submission disabled)")
+	}
 }
 
-// Board API types (public, no auth)
-
-type ghBoardResponse struct {
-	Jobs []ghBoardJob `json:"jobs"`
-}
-
-type ghBoardJob struct {
-	ID          int    `json:"id"`
-	Title       string `json:"title"`
-	AbsoluteURL string `json:"absolute_url"`
+type ghHarvestJob struct {
+	ID     int    `json:"id"`
+	Name   string `json:"name"`
+	Status string `json:"status"`
 }
 
 func normaliseTitle(s string) string {
 	return strings.ToLower(strings.TrimSpace(s))
 }
 
-func (c *greenhouseClient) refreshBoardCache(ctx context.Context) error {
+// refreshJobCache fetches all jobs from the Greenhouse Harvest API (paginated)
+// and builds title-to-URL and title-to-ID maps. Requires API key.
+func (c *greenhouseClient) refreshJobCache(ctx context.Context) error {
+	if c.apiKey == "" {
+		return fmt.Errorf("greenhouse API key not set")
+	}
+
 	c.mu.RLock()
 	if time.Since(c.cachedAt) < time.Hour && len(c.titleURLMap) > 0 {
 		c.mu.RUnlock()
@@ -69,33 +69,29 @@ func (c *greenhouseClient) refreshBoardCache(ctx context.Context) error {
 	}
 	c.mu.RUnlock()
 
-	req, err := http.NewRequestWithContext(ctx, "GET", ghBoardAPI, nil)
-	if err != nil {
-		return err
-	}
+	urlMap := make(map[string]string)
+	idMap := make(map[string]int)
 
-	resp, err := c.http.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
+	for page := 1; ; page++ {
+		raw, err := c.harvestGet(ctx, fmt.Sprintf("/jobs?per_page=500&page=%d", page))
+		if err != nil {
+			return fmt.Errorf("harvest jobs page %d: %w", page, err)
+		}
 
-	body, _ := io.ReadAll(resp.Body)
-	if resp.StatusCode != 200 {
-		return fmt.Errorf("greenhouse board API %d: %s", resp.StatusCode, string(body))
-	}
+		var jobs []ghHarvestJob
+		if err := json.Unmarshal(raw, &jobs); err != nil {
+			return fmt.Errorf("parse jobs page %d: %w", page, err)
+		}
 
-	var board ghBoardResponse
-	if err := json.Unmarshal(body, &board); err != nil {
-		return err
-	}
+		for _, j := range jobs {
+			key := normaliseTitle(j.Name)
+			urlMap[key] = fmt.Sprintf("%s/%d", ghInternalURL, j.ID)
+			idMap[key] = j.ID
+		}
 
-	urlMap := make(map[string]string, len(board.Jobs))
-	idMap := make(map[string]int, len(board.Jobs))
-	for _, j := range board.Jobs {
-		key := normaliseTitle(j.Title)
-		urlMap[key] = j.AbsoluteURL
-		idMap[key] = j.ID
+		if len(jobs) < 500 {
+			break
+		}
 	}
 
 	c.mu.Lock()
@@ -104,14 +100,15 @@ func (c *greenhouseClient) refreshBoardCache(ctx context.Context) error {
 	c.cachedAt = time.Now()
 	c.mu.Unlock()
 
-	zap.L().Info("greenhouse board cache refreshed", zap.Int("jobs", len(board.Jobs)))
+	zap.L().Info("greenhouse harvest job cache refreshed", zap.Int("jobs", len(urlMap)))
 	return nil
 }
 
-// JobURL returns the Greenhouse board URL for a given job title, or "" if not found.
+// JobURL returns the internal Greenhouse job dashboard URL for a given title, or "" if not found.
 func (c *greenhouseClient) JobURL(ctx context.Context, title string) string {
-	if err := c.refreshBoardCache(ctx); err != nil {
-		zap.L().Warn("board cache refresh failed", zap.Error(err))
+	if err := c.refreshJobCache(ctx); err != nil {
+		zap.L().Warn("harvest job cache refresh failed", zap.Error(err))
+		return ""
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
@@ -119,33 +116,19 @@ func (c *greenhouseClient) JobURL(ctx context.Context, title string) string {
 	if u, ok := c.titleURLMap[normaliseTitle(title)]; ok {
 		return u
 	}
-
-	norm := normaliseTitle(title)
-	for key, u := range c.titleURLMap {
-		if strings.Contains(key, norm) || strings.Contains(norm, key) {
-			return u
-		}
-	}
 	return ""
 }
 
-// lookupGHJobID returns the Greenhouse numeric job ID for a given Ashby job title.
+// lookupGHJobID returns the Greenhouse numeric job ID for a given job title.
 func (c *greenhouseClient) lookupGHJobID(ctx context.Context, title string) (int, error) {
-	if err := c.refreshBoardCache(ctx); err != nil {
-		return 0, fmt.Errorf("board cache refresh failed: %w", err)
+	if err := c.refreshJobCache(ctx); err != nil {
+		return 0, fmt.Errorf("harvest job cache refresh failed: %w", err)
 	}
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
 	if id, ok := c.titleIDMap[normaliseTitle(title)]; ok {
 		return id, nil
-	}
-
-	norm := normaliseTitle(title)
-	for key, id := range c.titleIDMap {
-		if strings.Contains(key, norm) || strings.Contains(norm, key) {
-			return id, nil
-		}
 	}
 	return 0, fmt.Errorf("no greenhouse job found matching %q", title)
 }
