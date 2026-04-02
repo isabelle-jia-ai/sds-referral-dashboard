@@ -38,23 +38,17 @@ func handleListReferrals() gin.HandlerFunc {
 			return
 		}
 
-		emails := make([]string, 0, len(resp.Rows))
-		for _, row := range resp.Rows {
-			emails = append(emails, toStr(row["primary_email"]))
-		}
-
-		linkedInMap := make(map[string]string)
-		if ghClient != nil && ghClient.apiKey != "" {
-			linkedInMap = ghClient.BulkLookupLinkedIn(c.Request.Context(), emails)
-		}
-
 		referrals := make([]gin.H, 0, len(resp.Rows))
 		for _, row := range resp.Rows {
 			email := toStr(row["primary_email"])
+			linkedIn := ""
+			if ghClient != nil && ghClient.apiKey != "" {
+				linkedIn = ghClient.CachedLinkedIn(email)
+			}
 			referrals = append(referrals, gin.H{
 				"id":             toStr(row["application_id"]),
 				"candidate_name": toStr(row["candidate_name"]),
-				"linkedin_url":   linkedInMap[email],
+				"linkedin_url":   linkedIn,
 				"role":           toStr(row["role"]),
 				"job_id":         toStr(row["job_id"]),
 				"referrer_name":  toStr(row["referrer_name"]),

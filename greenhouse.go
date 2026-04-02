@@ -210,6 +210,13 @@ func (c *greenhouseClient) lookupUserByEmail(ctx context.Context, email string) 
 	return fmt.Sprintf("%d", users[0].ID), nil
 }
 
+// CachedLinkedIn returns the LinkedIn URL from cache without making any API calls.
+func (c *greenhouseClient) CachedLinkedIn(email string) string {
+	c.linkedInMu.RLock()
+	defer c.linkedInMu.RUnlock()
+	return c.linkedInCache[email]
+}
+
 // LookupLinkedIn searches Greenhouse for a candidate by email and returns their
 // LinkedIn URL from social_media_addresses. Results are cached indefinitely.
 func (c *greenhouseClient) LookupLinkedIn(ctx context.Context, email string) string {
@@ -285,7 +292,7 @@ func (c *greenhouseClient) BulkLookupLinkedIn(ctx context.Context, emails []stri
 		return result
 	}
 
-	sem := make(chan struct{}, 5)
+	sem := make(chan struct{}, 10)
 	var mu sync.Mutex
 	var wg sync.WaitGroup
 
@@ -305,6 +312,53 @@ func (c *greenhouseClient) BulkLookupLinkedIn(ctx context.Context, emails []stri
 	wg.Wait()
 
 	return result
+}
+
+// PreWarmLinkedInCache fetches all SDS referral candidate emails from the
+// Datalake and looks them up in Greenhouse in the background. Safe to call
+// from a goroutine; logs progress but never blocks the caller.
+func (c *greenhouseClient) PreWarmLinkedInCache() {
+	if c.apiKey == "" || dlClient == nil {
+		return
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	resp, err := dlClient.query(ctx, `
+		SELECT DISTINCT c.primary_email
+		FROM ashby_applications a
+		JOIN ashby_candidates c ON a.candidate_id = c.id
+		JOIN ashby_jobs j ON a.job_id = j.id
+		WHERE `+sdsFilter+` AND `+referralFilter+`
+		AND c.primary_email IS NOT NULL AND c.primary_email != ''
+	`, 60)
+	if err != nil {
+		zap.L().Warn("linkedin pre-warm: datalake query failed", zap.Error(err))
+		return
+	}
+
+	emails := make([]string, 0, len(resp.Rows))
+	for _, row := range resp.Rows {
+		if e := toStr(row["primary_email"]); e != "" {
+			emails = append(emails, e)
+		}
+	}
+
+	zap.L().Info("linkedin pre-warm: starting", zap.Int("emails", len(emails)))
+	c.BulkLookupLinkedIn(ctx, emails)
+
+	c.linkedInMu.RLock()
+	total := len(c.linkedInCache)
+	found := 0
+	for _, v := range c.linkedInCache {
+		if v != "" {
+			found++
+		}
+	}
+	c.linkedInMu.RUnlock()
+
+	zap.L().Info("linkedin pre-warm: complete", zap.Int("total", total), zap.Int("with_linkedin", found))
 }
 
 type referralSubmission struct {

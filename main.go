@@ -25,6 +25,8 @@ func main() {
 	initDatalakeClient(context.Background())
 	initGreenhouseClient()
 
+	go ghClient.PreWarmLinkedInCache()
+
 	r := gin.Default()
 
 	r.GET("/health", func(c *gin.Context) {
