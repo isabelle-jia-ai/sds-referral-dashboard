@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 
 interface Referral {
   id: string
@@ -29,6 +29,21 @@ const stageColors: Record<string, string> = {
   'Archived': 'bg-orange-100 text-orange-700',
 }
 
+const stageSelectedColors: Record<string, string> = {
+  'Submitted': 'bg-gray-600 text-white',
+  'Application Review': 'bg-blue-600 text-white',
+  'Initial Phone Screen': 'bg-sky-600 text-white',
+  'Technical Phone Screen': 'bg-indigo-600 text-white',
+  'Pre-Interview Sell Chat': 'bg-cyan-600 text-white',
+  'Onsite and Leads Chat': 'bg-purple-600 text-white',
+  'Post-Interview Sell Chat': 'bg-fuchsia-600 text-white',
+  'Leads Chat': 'bg-violet-600 text-white',
+  'Offer': 'bg-green-600 text-white',
+  'Hired': 'bg-emerald-600 text-white',
+  'Rejected': 'bg-red-600 text-white',
+  'Archived': 'bg-orange-600 text-white',
+}
+
 function getStageBadgeClass(stage: string): string {
   return stageColors[stage] || 'bg-gray-100 text-gray-700'
 }
@@ -40,15 +55,17 @@ export default function ReferralDashboard({
   initialStageFilter: string
   onFilterApplied: () => void
 }) {
-  const [referrals, setReferrals] = useState<Referral[]>([])
+  const [allReferrals, setAllReferrals] = useState<Referral[]>([])
   const [loading, setLoading] = useState(true)
-  const [stageFilter, setStageFilter] = useState(initialStageFilter)
+  const [selectedStages, setSelectedStages] = useState<Set<string>>(
+    () => initialStageFilter ? new Set([initialStageFilter]) : new Set(),
+  )
   const [roleFilter, setRoleFilter] = useState('')
   const [search, setSearch] = useState('')
 
   useEffect(() => {
     if (initialStageFilter) {
-      setStageFilter(initialStageFilter)
+      setSelectedStages(new Set([initialStageFilter]))
       onFilterApplied()
     }
   }, [initialStageFilter, onFilterApplied])
@@ -58,21 +75,35 @@ export default function ReferralDashboard({
       setLoading(true)
       try {
         const params = new URLSearchParams()
-        if (stageFilter) params.set('stage', stageFilter)
         if (roleFilter) params.set('role', roleFilter)
         const res = await fetch(`/api/referrals?${params}`)
         const data = await res.json()
-        setReferrals(data.referrals || [])
+        setAllReferrals(data.referrals || [])
       } catch {
-        setReferrals([])
+        setAllReferrals([])
       } finally {
         setLoading(false)
       }
     }
     fetchReferrals()
-  }, [stageFilter, roleFilter])
+  }, [roleFilter])
 
-  const filtered = referrals.filter((r) => {
+  const toggleStage = useCallback((stage: string) => {
+    setSelectedStages((prev) => {
+      const next = new Set(prev)
+      if (next.has(stage)) {
+        next.delete(stage)
+      } else {
+        next.add(stage)
+      }
+      return next
+    })
+  }, [])
+
+  const stages = [...new Set(allReferrals.map((r) => r.stage))].sort()
+
+  const filtered = allReferrals.filter((r) => {
+    if (selectedStages.size > 0 && !selectedStages.has(r.stage)) return false
     if (!search) return true
     const q = search.toLowerCase()
     return (
@@ -82,7 +113,7 @@ export default function ReferralDashboard({
     )
   })
 
-  const stages = [...new Set(referrals.map((r) => r.stage))].sort()
+  const hasFilters = selectedStages.size > 0 || roleFilter || search
 
   return (
     <div className="p-6 max-w-7xl mx-auto">
@@ -90,10 +121,11 @@ export default function ReferralDashboard({
         <h2 className="text-2xl font-bold text-gray-900">Referrals</h2>
         <p className="text-sm text-gray-500 mt-1">
           {filtered.length} referral{filtered.length !== 1 ? 's' : ''} found
+          {selectedStages.size > 0 && ` in ${selectedStages.size} stage${selectedStages.size !== 1 ? 's' : ''}`}
         </p>
       </div>
 
-      <div className="flex flex-wrap items-center gap-3 mb-6">
+      <div className="flex flex-wrap items-center gap-3 mb-4">
         <input
           type="text"
           placeholder="Search by name, role, or referrer..."
@@ -101,16 +133,6 @@ export default function ReferralDashboard({
           onChange={(e) => setSearch(e.target.value)}
           className="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 focus:border-transparent w-72"
         />
-        <select
-          value={stageFilter}
-          onChange={(e) => setStageFilter(e.target.value)}
-          className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500"
-        >
-          <option value="">All Stages</option>
-          {stages.map((s) => (
-            <option key={s} value={s}>{s}</option>
-          ))}
-        </select>
         <input
           type="text"
           placeholder="Filter by role..."
@@ -118,15 +140,39 @@ export default function ReferralDashboard({
           onChange={(e) => setRoleFilter(e.target.value)}
           className="px-3 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 w-48"
         />
-        {(stageFilter || roleFilter || search) && (
+        {hasFilters && (
           <button
-            onClick={() => { setStageFilter(''); setRoleFilter(''); setSearch('') }}
+            onClick={() => { setSelectedStages(new Set()); setRoleFilter(''); setSearch('') }}
             className="px-3 py-2 text-sm text-gray-500 hover:text-gray-700"
           >
             Clear filters
           </button>
         )}
       </div>
+
+      {!loading && stages.length > 0 && (
+        <div className="flex flex-wrap gap-2 mb-6">
+          {stages.map((stage) => {
+            const isSelected = selectedStages.has(stage)
+            const colorClass = isSelected
+              ? (stageSelectedColors[stage] || 'bg-gray-600 text-white')
+              : (stageColors[stage] || 'bg-gray-100 text-gray-700')
+            const count = allReferrals.filter((r) => r.stage === stage).length
+            return (
+              <button
+                key={stage}
+                onClick={() => toggleStage(stage)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-medium transition-all ${colorClass} ${
+                  isSelected ? 'ring-2 ring-offset-1 ring-gray-400' : 'hover:opacity-80'
+                }`}
+              >
+                {stage}
+                <span className={`${isSelected ? 'opacity-80' : 'opacity-60'}`}>({count})</span>
+              </button>
+            )
+          })}
+        </div>
+      )}
 
       {loading ? (
         <div className="flex items-center justify-center h-64">
