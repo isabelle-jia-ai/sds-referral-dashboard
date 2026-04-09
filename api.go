@@ -24,6 +24,9 @@ func RegisterAPIRoutes(r *gin.Engine) {
 	api.GET("/refer/form", handleReferralForm())
 	api.GET("/refer/jobs", handleReferralJobs())
 	api.POST("/refer", handleSubmitReferral())
+
+	api.POST("/auth/verify", handleAuthVerify())
+	api.GET("/auth/check", handleAuthCheck())
 }
 
 func handleListReferrals() gin.HandlerFunc {
