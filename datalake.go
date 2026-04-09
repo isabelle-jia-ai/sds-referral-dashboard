@@ -223,6 +223,38 @@ func dlQuarterlyTrends(ctx context.Context) (*dlResponse, error) {
 	`, 60)
 }
 
+func dlHiredQuarterly(ctx context.Context) (*dlResponse, error) {
+	return dlClient.query(ctx, `
+		SELECT
+			to_char(date_trunc('quarter', a.created_at), 'YYYY-"Q"Q') AS quarter,
+			COUNT(*) AS hired
+		FROM ashby_applications a
+		JOIN ashby_jobs j ON a.job_id = j.id
+		WHERE `+sdsFilter+` AND `+referralFilter+`
+		AND a.status = 'Hired'
+		AND a.created_at >= '2025-01-01'
+		GROUP BY date_trunc('quarter', a.created_at)
+		ORDER BY quarter
+	`, 60)
+}
+
+func dlCompanyReferralComparison(ctx context.Context) (*dlResponse, error) {
+	return dlClient.query(ctx, `
+		SELECT
+			d.name AS department,
+			to_char(date_trunc('quarter', a.created_at), 'YYYY-"Q"Q') AS quarter,
+			COUNT(*) AS referrals
+		FROM ashby_applications a
+		JOIN ashby_jobs j ON a.job_id = j.id
+		JOIN ashby_departments d ON j.department_id = d.id
+		WHERE `+referralFilter+`
+		AND a.created_at >= '2025-01-01'
+		AND j.title NOT LIKE '[TEST]%'
+		GROUP BY d.name, date_trunc('quarter', a.created_at)
+		ORDER BY department, quarter
+	`, 60)
+}
+
 func dlJobsWithReferralCounts(ctx context.Context) (*dlResponse, error) {
 	return dlClient.query(ctx, `
 		SELECT

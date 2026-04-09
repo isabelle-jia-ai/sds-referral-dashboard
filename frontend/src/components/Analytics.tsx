@@ -4,6 +4,7 @@ interface Stats {
   total_referrals: number
   active: number
   rejected: number
+  hired: number
   open_jobs: number
 }
 
@@ -22,33 +23,52 @@ interface QuarterlyCount {
   count: number
 }
 
+interface HiredQuarter {
+  quarter: string
+  hired: number
+}
+
+interface DeptComparison {
+  department: string
+  total: number
+  quarters: Record<string, number>
+}
+
 export default function Analytics({ onStageClick }: { onStageClick: (stage: string) => void }) {
   const [stats, setStats] = useState<Stats | null>(null)
   const [stages, setStages] = useState<StageCount[]>([])
   const [roles, setRoles] = useState<RoleCount[]>([])
   const [quarters, setQuarters] = useState<QuarterlyCount[]>([])
+  const [hiredQuarters, setHiredQuarters] = useState<HiredQuarter[]>([])
+  const [deptComparison, setDeptComparison] = useState<DeptComparison[]>([])
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
     const fetchAll = async () => {
       setLoading(true)
       try {
-        const [statsRes, stagesRes, rolesRes, quartersRes] = await Promise.all([
+        const [statsRes, stagesRes, rolesRes, quartersRes, hiredRes, compRes] = await Promise.all([
           fetch('/api/referrals/stats'),
           fetch('/api/referrals/by-stage'),
           fetch('/api/referrals/by-role'),
           fetch('/api/referrals/quarterly'),
+          fetch('/api/referrals/hired-quarterly'),
+          fetch('/api/referrals/company-comparison'),
         ])
-        const [statsData, stagesData, rolesData, quartersData] = await Promise.all([
+        const [statsData, stagesData, rolesData, quartersData, hiredData, compData] = await Promise.all([
           statsRes.json(),
           stagesRes.json(),
           rolesRes.json(),
           quartersRes.json(),
+          hiredRes.json(),
+          compRes.json(),
         ])
         setStats(statsData.stats || null)
         setStages(stagesData.stages || [])
         setRoles(rolesData.roles || [])
         setQuarters(quartersData.quarters || [])
+        setHiredQuarters(hiredData.quarters || [])
+        setDeptComparison(compData.departments || [])
       } catch { /* ignore */ } finally {
         setLoading(false)
       }
@@ -67,6 +87,14 @@ export default function Analytics({ onStageClick }: { onStageClick: (stage: stri
   const maxStageCount = Math.max(...stages.map((s) => s.count), 1)
   const maxRoleCount = Math.max(...roles.map((r) => r.count), 1)
   const maxQuarterCount = Math.max(...quarters.map((q) => q.count), 1)
+  const maxHiredCount = Math.max(...hiredQuarters.map((q) => q.hired), 1)
+
+  const allQLabels = Array.from(
+    new Set([...quarters.map((q) => q.quarter), ...hiredQuarters.map((q) => q.quarter)])
+  ).sort()
+
+  const hiredMap = Object.fromEntries(hiredQuarters.map((q) => [q.quarter, q.hired]))
+  const referralMap = Object.fromEntries(quarters.map((q) => [q.quarter, q.count]))
 
   return (
     <div className="p-6 max-w-7xl mx-auto space-y-8">
@@ -75,9 +103,10 @@ export default function Analytics({ onStageClick }: { onStageClick: (stage: stri
         <p className="text-sm text-gray-500 mt-1">Referral pipeline overview</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         <SummaryCard label="Total Referrals" value={stats?.total_referrals ?? 0} color="blue" />
         <SummaryCard label="Active" value={stats?.active ?? 0} color="green" />
+        <SummaryCard label="Hired" value={stats?.hired ?? 0} color="emerald" />
         <SummaryCard label="Rejected" value={stats?.rejected ?? 0} color="red" />
         <SummaryCard label="Open Positions" value={stats?.open_jobs ?? 0} color="purple" />
       </div>
@@ -112,35 +141,11 @@ export default function Analytics({ onStageClick }: { onStageClick: (stage: stri
         )}
       </div>
 
+      {/* Quarterly Trends + Hired side by side */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Referrals by Role</h3>
-          {roles.length === 0 ? (
-            <p className="text-gray-400 text-sm">No data yet</p>
-          ) : (
-            <div className="space-y-3 max-h-80 overflow-y-auto">
-              {roles.slice(0, 15).map((r) => (
-                <div key={r.role}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className="text-sm text-gray-700 truncate max-w-[200px]" title={r.role}>
-                      {r.role}
-                    </span>
-                    <span className="text-sm font-semibold text-gray-900 ml-2">{r.count}</span>
-                  </div>
-                  <div className="w-full bg-gray-100 rounded-full h-2">
-                    <div
-                      className="bg-indigo-400 h-2 rounded-full transition-all"
-                      style={{ width: `${(r.count / maxRoleCount) * 100}%` }}
-                    />
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Quarterly Trends</h3>
+          <h3 className="text-lg font-semibold text-gray-900 mb-1">Quarterly Trends</h3>
+          <p className="text-xs text-gray-400 mb-4">Referrals submitted per quarter</p>
           {quarters.length === 0 ? (
             <p className="text-gray-400 text-sm">No data yet</p>
           ) : (
@@ -160,6 +165,123 @@ export default function Analytics({ onStageClick }: { onStageClick: (stage: stri
             </div>
           )}
         </div>
+
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-1">Referral Hires by Quarter</h3>
+          <p className="text-xs text-gray-400 mb-4">Candidates hired from referrals</p>
+          {hiredQuarters.length === 0 ? (
+            <p className="text-gray-400 text-sm">No data yet</p>
+          ) : (
+            <div className="flex items-end gap-2 h-48">
+              {hiredQuarters.map((q) => (
+                <div key={q.quarter} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-xs font-medium text-gray-700">{q.hired}</span>
+                  <div
+                    className="w-full bg-emerald-400 rounded-t-md transition-all min-h-[4px]"
+                    style={{ height: `${(q.hired / maxHiredCount) * 100}%` }}
+                  />
+                  <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                    {q.quarter}
+                  </span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* Conversion rate mini-chart */}
+      {allQLabels.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-1">Referral-to-Hire Conversion</h3>
+          <p className="text-xs text-gray-400 mb-4">Percentage of referrals that resulted in a hire, by quarter</p>
+          <div className="flex items-end gap-3 h-36">
+            {allQLabels.map((q) => {
+              const refs = referralMap[q] || 0
+              const hires = hiredMap[q] || 0
+              const pct = refs > 0 ? Math.round((hires / refs) * 100) : 0
+              return (
+                <div key={q} className="flex-1 flex flex-col items-center gap-1">
+                  <span className="text-xs font-semibold text-gray-700">{pct}%</span>
+                  <span className="text-[9px] text-gray-400">{hires}/{refs}</span>
+                  <div
+                    className="w-full bg-amber-400 rounded-t-md transition-all min-h-[4px]"
+                    style={{ height: `${Math.max(pct, 2)}%` }}
+                  />
+                  <span className="text-[10px] text-gray-400 whitespace-nowrap">{q}</span>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Company-wide comparison */}
+      {deptComparison.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h3 className="text-lg font-semibold text-gray-900 mb-1">Referrals vs. Other Organizations</h3>
+          <p className="text-xs text-gray-400 mb-4">Top 10 departments by total referrals since 2025</p>
+          <div className="space-y-3">
+            {deptComparison.map((dept) => {
+              const isSDS = dept.department === 'SDS (Combined)'
+              const maxTotal = deptComparison[0]?.total || 1
+              return (
+                <div key={dept.department}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className={`text-sm font-medium ${isSDS ? 'text-blue-700' : 'text-gray-700'}`}>
+                      {dept.department}
+                      {isSDS && <span className="ml-1.5 text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded-full font-semibold">YOU</span>}
+                    </span>
+                    <span className="text-sm font-semibold text-gray-900">{dept.total}</span>
+                  </div>
+                  <div className="w-full bg-gray-100 rounded-full h-2.5">
+                    <div
+                      className={`h-2.5 rounded-full transition-all ${isSDS ? 'bg-blue-500' : 'bg-gray-300'}`}
+                      style={{ width: `${(dept.total / maxTotal) * 100}%` }}
+                    />
+                  </div>
+                  <div className="flex gap-1 mt-1">
+                    {allQLabels.map((q) => {
+                      const count = dept.quarters[q] || 0
+                      return (
+                        <span key={q} className="text-[9px] text-gray-400 flex-1 text-center">
+                          {q.replace(/^\d{4}-/, '')}: {count}
+                        </span>
+                      )
+                    })}
+                  </div>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* Referrals by Role */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6">
+        <h3 className="text-lg font-semibold text-gray-900 mb-4">Referrals by Role</h3>
+        {roles.length === 0 ? (
+          <p className="text-gray-400 text-sm">No data yet</p>
+        ) : (
+          <div className="space-y-3 max-h-80 overflow-y-auto">
+            {roles.slice(0, 15).map((r) => (
+              <div key={r.role}>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-sm text-gray-700 truncate max-w-[200px]" title={r.role}>
+                    {r.role}
+                  </span>
+                  <span className="text-sm font-semibold text-gray-900 ml-2">{r.count}</span>
+                </div>
+                <div className="w-full bg-gray-100 rounded-full h-2">
+                  <div
+                    className="bg-indigo-400 h-2 rounded-full transition-all"
+                    style={{ width: `${(r.count / maxRoleCount) * 100}%` }}
+                  />
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </div>
   )
@@ -169,6 +291,7 @@ function SummaryCard({ label, value, color }: { label: string; value: number; co
   const colorMap: Record<string, string> = {
     blue: 'bg-blue-50 text-blue-700 border-blue-200',
     green: 'bg-green-50 text-green-700 border-green-200',
+    emerald: 'bg-emerald-50 text-emerald-700 border-emerald-200',
     red: 'bg-red-50 text-red-700 border-red-200',
     purple: 'bg-purple-50 text-purple-700 border-purple-200',
   }
@@ -180,4 +303,3 @@ function SummaryCard({ label, value, color }: { label: string; value: number; co
     </div>
   )
 }
-

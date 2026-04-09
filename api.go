@@ -15,6 +15,8 @@ func RegisterAPIRoutes(r *gin.Engine) {
 	api.GET("/referrals/by-stage", handleReferralsByStage())
 	api.GET("/referrals/by-role", handleReferralsByRole())
 	api.GET("/referrals/quarterly", handleQuarterlyTrends())
+	api.GET("/referrals/hired-quarterly", handleHiredQuarterly())
+	api.GET("/referrals/company-comparison", handleCompanyComparison())
 
 	api.GET("/jobs", handleListJobs())
 
@@ -88,9 +90,14 @@ func handleReferralStats() gin.HandlerFunc {
 
 		stagesResp, _ := dlReferralsByStage(c.Request.Context())
 		stages := map[string]int{}
+		hired := 0
 		if stagesResp != nil {
 			for _, r := range stagesResp.Rows {
-				stages[toStr(r["stage"])] = toInt(r["count"])
+				stage := toStr(r["stage"])
+				stages[stage] = toInt(r["count"])
+				if stage == "Hired" {
+					hired = toInt(r["count"])
+				}
 			}
 		}
 
@@ -100,6 +107,7 @@ func handleReferralStats() gin.HandlerFunc {
 				"total_referrals": toInt(row["total_referrals"]),
 				"active":          toInt(row["active"]),
 				"rejected":        toInt(row["rejected"]),
+				"hired":           hired,
 				"open_jobs":       len(jobsResp.Rows),
 				"priority_jobs":   0,
 				"stages":          stages,
@@ -165,6 +173,116 @@ func handleQuarterlyTrends() gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"success": true, "quarters": quarters})
+	}
+}
+
+func handleHiredQuarterly() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		resp, err := dlHiredQuarterly(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		quarters := make([]gin.H, 0, len(resp.Rows))
+		for _, row := range resp.Rows {
+			quarters = append(quarters, gin.H{
+				"quarter": toStr(row["quarter"]),
+				"hired":   toInt(row["hired"]),
+			})
+		}
+
+		c.JSON(http.StatusOK, gin.H{"success": true, "quarters": quarters})
+	}
+}
+
+func handleCompanyComparison() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		resp, err := dlCompanyReferralComparison(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		type deptQuarter struct {
+			Dept    string
+			Quarter string
+			Count   int
+		}
+
+		deptTotals := map[string]int{}
+		deptQuarters := map[string]map[string]int{}
+		allQuarters := map[string]bool{}
+
+		for _, row := range resp.Rows {
+			dept := toStr(row["department"])
+			quarter := toStr(row["quarter"])
+			count := toInt(row["referrals"])
+
+			deptTotals[dept] += count
+			allQuarters[quarter] = true
+			if deptQuarters[dept] == nil {
+				deptQuarters[dept] = map[string]int{}
+			}
+			deptQuarters[dept][quarter] = count
+		}
+
+		// Combine SDS departments into one "SDS (Combined)" entry
+		sdsCombined := map[string]int{}
+		sdsTotalCombined := 0
+		for dept, qmap := range deptQuarters {
+			if dept == "SDS Software Engineering" || dept == "SDS Systems Engineering" {
+				for q, c := range qmap {
+					sdsCombined[q] += c
+				}
+				sdsTotalCombined += deptTotals[dept]
+			}
+		}
+
+		// Build top 10 departments by total (excluding individual SDS depts, include combined)
+		type ranked struct {
+			Name  string
+			Total int
+		}
+		var ranking []ranked
+		seen := map[string]bool{}
+		for dept, total := range deptTotals {
+			if dept == "SDS Software Engineering" || dept == "SDS Systems Engineering" {
+				continue
+			}
+			ranking = append(ranking, ranked{dept, total})
+			seen[dept] = true
+		}
+		ranking = append(ranking, ranked{"SDS (Combined)", sdsTotalCombined})
+
+		// Sort by total descending
+		for i := 0; i < len(ranking); i++ {
+			for j := i + 1; j < len(ranking); j++ {
+				if ranking[j].Total > ranking[i].Total {
+					ranking[i], ranking[j] = ranking[j], ranking[i]
+				}
+			}
+		}
+
+		top := 10
+		if len(ranking) < top {
+			top = len(ranking)
+		}
+
+		departments := make([]gin.H, 0, top)
+		for _, r := range ranking[:top] {
+			qdata := deptQuarters[r.Name]
+			if r.Name == "SDS (Combined)" {
+				qdata = sdsCombined
+			}
+			departments = append(departments, gin.H{
+				"department": r.Name,
+				"total":      r.Total,
+				"quarters":   qdata,
+			})
+		}
+
+		c.JSON(http.StatusOK, gin.H{"success": true, "departments": departments})
 	}
 }
 
