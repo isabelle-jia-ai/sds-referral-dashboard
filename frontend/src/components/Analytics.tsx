@@ -28,6 +28,12 @@ interface HiredQuarter {
   hired: number
 }
 
+interface HiredByRole {
+  role: string
+  total_hires: number
+  referral_hires: number
+}
+
 interface DeptComparison {
   department: string
   total: number
@@ -40,6 +46,7 @@ export default function Analytics({ onStageClick }: { onStageClick: (stage: stri
   const [roles, setRoles] = useState<RoleCount[]>([])
   const [quarters, setQuarters] = useState<QuarterlyCount[]>([])
   const [hiredQuarters, setHiredQuarters] = useState<HiredQuarter[]>([])
+  const [hiredByRole, setHiredByRole] = useState<HiredByRole[]>([])
   const [deptComparison, setDeptComparison] = useState<DeptComparison[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -47,21 +54,23 @@ export default function Analytics({ onStageClick }: { onStageClick: (stage: stri
     const fetchAll = async () => {
       setLoading(true)
       try {
-        const [statsRes, stagesRes, rolesRes, quartersRes, hiredRes, compRes] = await Promise.all([
+        const [statsRes, stagesRes, rolesRes, quartersRes, hiredRes, compRes, hiredRoleRes] = await Promise.all([
           fetch('/api/referrals/stats'),
           fetch('/api/referrals/by-stage'),
           fetch('/api/referrals/by-role'),
           fetch('/api/referrals/quarterly'),
           fetch('/api/referrals/hired-quarterly'),
           fetch('/api/referrals/company-comparison'),
+          fetch('/api/referrals/hired-by-role'),
         ])
-        const [statsData, stagesData, rolesData, quartersData, hiredData, compData] = await Promise.all([
+        const [statsData, stagesData, rolesData, quartersData, hiredData, compData, hiredRoleData] = await Promise.all([
           statsRes.json(),
           stagesRes.json(),
           rolesRes.json(),
           quartersRes.json(),
           hiredRes.json(),
           compRes.json(),
+          hiredRoleRes.json(),
         ])
         setStats(statsData.stats || null)
         setStages(stagesData.stages || [])
@@ -69,6 +78,7 @@ export default function Analytics({ onStageClick }: { onStageClick: (stage: stri
         setQuarters(quartersData.quarters || [])
         setHiredQuarters(hiredData.quarters || [])
         setDeptComparison(compData.departments || [])
+        setHiredByRole(hiredRoleData.roles || [])
       } catch { /* ignore */ } finally {
         setLoading(false)
       }
@@ -215,6 +225,51 @@ export default function Analytics({ onStageClick }: { onStageClick: (stage: stri
           </div>
         </div>
       )}
+
+      {/* Referral-to-Hire Rate by Role */}
+      {hiredByRole.length > 0 && (() => {
+        const totalH = hiredByRole.reduce((s, r) => s + r.total_hires, 0)
+        const totalRH = hiredByRole.reduce((s, r) => s + r.referral_hires, 0)
+        const overallPct = totalH > 0 ? Math.round((totalRH / totalH) * 100) : 0
+        const maxHires = hiredByRole[0]?.total_hires || 1
+        return (
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="flex items-center justify-between mb-1">
+              <h3 className="text-lg font-semibold text-gray-900">Referral-to-Hire Rate by Role</h3>
+              <span className="text-sm font-semibold text-blue-700 bg-blue-50 px-3 py-1 rounded-full">
+                {overallPct}% overall ({totalRH}/{totalH})
+              </span>
+            </div>
+            <p className="text-xs text-gray-400 mb-5">All SDS hires: referral share shown in blue</p>
+            <div className="space-y-3 max-h-[480px] overflow-y-auto">
+              {hiredByRole.map((r) => {
+                const pct = r.total_hires > 0 ? Math.round((r.referral_hires / r.total_hires) * 100) : 0
+                const barWidth = (r.total_hires / maxHires) * 100
+                const refShare = r.total_hires > 0 ? (r.referral_hires / r.total_hires) * 100 : 0
+                return (
+                  <div key={r.role}>
+                    <div className="flex items-center justify-between mb-1">
+                      <span className="text-sm text-gray-700 truncate max-w-[55%]" title={r.role}>
+                        {r.role}
+                      </span>
+                      <span className="text-xs text-gray-500 ml-2 whitespace-nowrap">
+                        <span className={`font-semibold ${pct >= 25 ? 'text-blue-700' : 'text-gray-700'}`}>{pct}%</span>
+                        {' '}({r.referral_hires}/{r.total_hires} hires)
+                      </span>
+                    </div>
+                    <div className="w-full bg-gray-100 rounded-full h-2.5" style={{ width: `${Math.max(barWidth, 8)}%` }}>
+                      <div
+                        className="bg-blue-500 h-2.5 rounded-full transition-all"
+                        style={{ width: `${refShare}%`, minWidth: r.referral_hires > 0 ? '4px' : '0' }}
+                      />
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+        )
+      })()}
 
       {/* Company-wide comparison */}
       {deptComparison.length > 0 && (

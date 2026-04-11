@@ -17,6 +17,7 @@ func RegisterAPIRoutes(r *gin.Engine) {
 	api.GET("/referrals/quarterly", handleQuarterlyTrends())
 	api.GET("/referrals/hired-quarterly", handleHiredQuarterly())
 	api.GET("/referrals/company-comparison", handleCompanyComparison())
+	api.GET("/referrals/hired-by-role", handleHiredByRole())
 
 	api.GET("/jobs", handleListJobs())
 
@@ -283,6 +284,27 @@ func handleCompanyComparison() gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"success": true, "departments": departments})
+	}
+}
+
+func handleHiredByRole() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		resp, err := dlHiredByRole(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		roles := make([]gin.H, 0, len(resp.Rows))
+		for _, row := range resp.Rows {
+			roles = append(roles, gin.H{
+				"role":           toStr(row["role"]),
+				"total_hires":    toInt(row["total_hires"]),
+				"referral_hires": toInt(row["referral_hires"]),
+			})
+		}
+
+		c.JSON(http.StatusOK, gin.H{"success": true, "roles": roles})
 	}
 }
 

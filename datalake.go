@@ -238,6 +238,20 @@ func dlHiredQuarterly(ctx context.Context) (*dlResponse, error) {
 	`, 60)
 }
 
+func dlHiredByRole(ctx context.Context) (*dlResponse, error) {
+	return dlClient.query(ctx, `
+		SELECT
+			j.title AS role,
+			COUNT(*) AS total_hires,
+			COUNT(CASE WHEN `+referralFilter+` THEN 1 END) AS referral_hires
+		FROM ashby_applications a
+		JOIN ashby_jobs j ON a.job_id = j.id
+		WHERE `+sdsFilter+` AND a.status = 'Hired'
+		GROUP BY j.title
+		ORDER BY total_hires DESC
+	`, 60)
+}
+
 func dlCompanyReferralComparison(ctx context.Context) (*dlResponse, error) {
 	return dlClient.query(ctx, `
 		SELECT
