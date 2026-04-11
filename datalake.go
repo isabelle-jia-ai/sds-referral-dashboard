@@ -318,10 +318,11 @@ func dlReferrerLeaderboard(ctx context.Context) (*dlResponse, error) {
 			COUNT(*) AS referral_count
 		FROM ashby_applications a
 		JOIN ashby_jobs j ON a.job_id = j.id
-		LEFT JOIN ashby_users u ON a.credited_to_user_id = u.id
+		JOIN ashby_users u ON a.credited_to_user_id = u.id
 		WHERE `+sdsFilter+` AND `+referralFilter+`
 		AND a.created_at >= '2025-01-01'
 		AND a.credited_to_user_id IS NOT NULL AND a.credited_to_user_id != ''
+		AND u.first_name IS NOT NULL
 		GROUP BY referrer_name
 		ORDER BY referral_count DESC
 	`, 60)

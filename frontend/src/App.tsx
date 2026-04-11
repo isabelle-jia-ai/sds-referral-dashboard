@@ -60,6 +60,11 @@ function App() {
 
   const clearFilter = useCallback(() => setInitialFilter(''), [])
 
+  const navigateToOpenRoles = useCallback(() => {
+    setActiveTab('priority-roles')
+    window.location.hash = 'priority-roles'
+  }, [])
+
   const renderContent = () => {
     switch (activeTab) {
       case 'referrals':
@@ -67,7 +72,7 @@ function App() {
       case 'priority-roles':
         return <PriorityRoles jobs={jobs} loading={jobsLoading} />
       case 'analytics':
-        return <Analytics onStageClick={navigateToReferrals} />
+        return <Analytics onStageClick={navigateToReferrals} onOpenRolesClick={navigateToOpenRoles} />
       case 'refer':
         return <ReferAFriend />
       case 'admin':

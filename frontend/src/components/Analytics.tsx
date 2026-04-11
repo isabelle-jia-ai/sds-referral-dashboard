@@ -23,7 +23,7 @@ interface LeaderboardEntry {
   referral_count: number
 }
 
-export default function Analytics({ onStageClick }: { onStageClick: (stage: string) => void }) {
+export default function Analytics({ onStageClick, onOpenRolesClick }: { onStageClick: (stage: string) => void; onOpenRolesClick: () => void }) {
   const [stats, setStats] = useState<Stats | null>(null)
   const [quarters, setQuarters] = useState<QuarterlyCount[]>([])
   const [hiredQuarters, setHiredQuarters] = useState<HiredQuarter[]>([])
@@ -85,11 +85,11 @@ export default function Analytics({ onStageClick }: { onStageClick: (stage: stri
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
-        <SummaryCard label="Total Referrals" value={stats?.total_referrals ?? 0} color="blue" />
+        <SummaryCard label="Total Referrals" value={stats?.total_referrals ?? 0} color="blue" onClick={() => onStageClick('')} />
         <SummaryCard label="Active" value={stats?.active ?? 0} color="green" onClick={() => onStageClick('Active')} />
         <SummaryCard label="Hired" value={stats?.hired ?? 0} color="emerald" onClick={() => onStageClick('Hired')} />
         <SummaryCard label="Rejected" value={stats?.rejected ?? 0} color="red" onClick={() => onStageClick('Rejected')} />
-        <SummaryCard label="Open Positions" value={stats?.open_jobs ?? 0} color="purple" />
+        <SummaryCard label="Open Positions" value={stats?.open_jobs ?? 0} color="purple" onClick={onOpenRolesClick} />
       </div>
 
       {/* Referrer Leaderboard */}
