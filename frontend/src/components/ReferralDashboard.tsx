@@ -100,7 +100,17 @@ export default function ReferralDashboard({
     })
   }, [])
 
-  const stages = [...new Set(allReferrals.map((r) => r.stage))].sort()
+  const stageOrder = [
+    'Application Review',
+    'Initial Phone Screen',
+    'Technical Phone Screen',
+    'Onsite and Leads Chat',
+    'Leads Chat',
+    'Offer',
+    'Hired',
+  ]
+  const presentStages = new Set(allReferrals.map((r) => r.stage))
+  const stages = stageOrder.filter((s) => presentStages.has(s))
 
   const filtered = allReferrals.filter((r) => {
     if (selectedStages.size > 0 && !selectedStages.has(r.stage)) return false
@@ -192,7 +202,6 @@ export default function ReferralDashboard({
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Referrer</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Stage</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Company</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
               </tr>
             </thead>
@@ -200,18 +209,7 @@ export default function ReferralDashboard({
               {filtered.map((r) => (
                 <tr key={r.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-4 py-3">
-                    {r.linkedin_url ? (
-                      <a
-                        href={r.linkedin_url}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="font-medium text-blue-600 hover:text-blue-800 hover:underline text-sm"
-                      >
-                        {r.candidate_name}
-                      </a>
-                    ) : (
-                      <span className="font-medium text-gray-900 text-sm">{r.candidate_name}</span>
-                    )}
+                    <span className="font-medium text-gray-900 text-sm">{r.candidate_name}</span>
                     {r.current_title && (
                       <p className="text-xs text-gray-400 mt-0.5">{r.current_title}</p>
                     )}
@@ -223,7 +221,6 @@ export default function ReferralDashboard({
                       {r.stage}
                     </span>
                   </td>
-                  <td className="px-4 py-3 text-sm text-gray-500">{r.company || '—'}</td>
                   <td className="px-4 py-3 text-sm text-gray-500">
                     {new Date(r.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
                   </td>

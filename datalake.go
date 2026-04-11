@@ -311,6 +311,22 @@ func dlCompanyReferralComparison(ctx context.Context) (*dlResponse, error) {
 	`, 60)
 }
 
+func dlReferrerLeaderboard(ctx context.Context) (*dlResponse, error) {
+	return dlClient.query(ctx, `
+		SELECT
+			COALESCE(u.first_name || ' ' || u.last_name, 'Unknown') AS referrer_name,
+			COUNT(*) AS referral_count
+		FROM ashby_applications a
+		JOIN ashby_jobs j ON a.job_id = j.id
+		LEFT JOIN ashby_users u ON a.credited_to_user_id = u.id
+		WHERE `+sdsFilter+` AND `+referralFilter+`
+		AND a.created_at >= '2025-01-01'
+		AND a.credited_to_user_id IS NOT NULL AND a.credited_to_user_id != ''
+		GROUP BY referrer_name
+		ORDER BY referral_count DESC
+	`, 60)
+}
+
 func dlJobsWithReferralCounts(ctx context.Context) (*dlResponse, error) {
 	return dlClient.query(ctx, `
 		SELECT

@@ -1,44 +1,17 @@
-import { useState, useEffect } from 'react'
+import { useState } from 'react'
+import type { Job } from '../App'
 
-interface Job {
-  id: string
-  title: string
-  department: string | null
-  status: string
-  referral_count: number
-  location: string | null
-  job_url: string | null
+interface PriorityRolesProps {
+  jobs: Job[]
+  loading: boolean
 }
 
-export default function PriorityRoles() {
-  const [jobs, setJobs] = useState<Job[]>([])
-  const [loading, setLoading] = useState(true)
+export default function PriorityRoles({ jobs, loading }: PriorityRolesProps) {
   const [search, setSearch] = useState('')
-
-  useEffect(() => {
-    const fetchJobs = async () => {
-      setLoading(true)
-      try {
-        const res = await fetch('/api/jobs')
-        const data = await res.json()
-        setJobs(data.jobs || [])
-      } catch {
-        setJobs([])
-      } finally {
-        setLoading(false)
-      }
-    }
-    fetchJobs()
-  }, [])
 
   const filtered = jobs.filter((j) => {
     if (!search) return true
-    const q = search.toLowerCase()
-    return (
-      j.title.toLowerCase().includes(q) ||
-      (j.department && j.department.toLowerCase().includes(q)) ||
-      (j.location && j.location.toLowerCase().includes(q))
-    )
+    return j.title.toLowerCase().includes(search.toLowerCase())
   })
 
   const totalReferrals = jobs.reduce((sum, j) => sum + j.referral_count, 0)
@@ -83,21 +56,14 @@ export default function PriorityRoles() {
             >
               <div className="mb-3">
                 <div className="flex items-center justify-between">
-                  <h3 className="font-semibold text-gray-900 text-sm truncate group-hover:text-blue-600 transition-colors" title={job.title}>
+                  <h3 className="font-semibold text-gray-900 text-sm group-hover:text-blue-600 transition-colors">
                     {job.title}
                   </h3>
                   <svg className="w-4 h-4 text-gray-300 group-hover:text-blue-500 flex-shrink-0 ml-2 transition-colors" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                   </svg>
                 </div>
-                {job.department && (
-                  <p className="text-xs text-gray-500 mt-0.5">{job.department}</p>
-                )}
               </div>
-
-              {job.location && (
-                <p className="text-xs text-gray-400 mb-3">{job.location}</p>
-              )}
 
               <div className="flex items-center gap-1.5">
                 <span className="text-lg font-bold text-gray-900">{job.referral_count}</span>

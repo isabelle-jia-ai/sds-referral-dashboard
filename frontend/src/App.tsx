@@ -1,4 +1,4 @@
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import Sidebar from './components/Sidebar'
 import ReferralDashboard from './components/ReferralDashboard'
 import PriorityRoles from './components/PriorityRoles'
@@ -16,9 +16,36 @@ function getInitialTab(): Tab {
   return validTabs.includes(hash as Tab) ? (hash as Tab) : 'referrals'
 }
 
+export interface Job {
+  id: string
+  title: string
+  department: string | null
+  status: string
+  referral_count: number
+  location: string | null
+  job_url: string | null
+}
+
 function App() {
   const [activeTab, setActiveTab] = useState<Tab>(getInitialTab)
   const [initialFilter, setInitialFilter] = useState('')
+  const [jobs, setJobs] = useState<Job[]>([])
+  const [jobsLoading, setJobsLoading] = useState(true)
+
+  useEffect(() => {
+    const fetchJobs = async () => {
+      try {
+        const res = await fetch('/api/jobs')
+        const data = await res.json()
+        setJobs(data.jobs || [])
+      } catch {
+        setJobs([])
+      } finally {
+        setJobsLoading(false)
+      }
+    }
+    fetchJobs()
+  }, [])
 
   const handleTabChange = useCallback((tab: Tab) => {
     setActiveTab(tab)
@@ -38,7 +65,7 @@ function App() {
       case 'referrals':
         return <ReferralDashboard initialStageFilter={initialFilter} onFilterApplied={clearFilter} />
       case 'priority-roles':
-        return <PriorityRoles />
+        return <PriorityRoles jobs={jobs} loading={jobsLoading} />
       case 'analytics':
         return <Analytics onStageClick={navigateToReferrals} />
       case 'refer':
