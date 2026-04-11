@@ -31,6 +31,9 @@ type greenhouseClient struct {
 
 	linkedInMu    sync.RWMutex
 	linkedInCache map[string]string // email -> linkedin URL (empty string = looked up, none found)
+
+	ghProfileMu    sync.RWMutex
+	ghProfileCache map[string]string // email -> GH profile URL
 }
 
 var ghClient *greenhouseClient
@@ -215,6 +218,94 @@ func (c *greenhouseClient) CachedLinkedIn(email string) string {
 	c.linkedInMu.RLock()
 	defer c.linkedInMu.RUnlock()
 	return c.linkedInCache[email]
+}
+
+// LookupGHProfile searches Greenhouse for a candidate by email and returns their
+// internal Greenhouse profile URL. Results are cached indefinitely.
+func (c *greenhouseClient) LookupGHProfile(ctx context.Context, email string) string {
+	if c.apiKey == "" || email == "" {
+		return ""
+	}
+
+	c.ghProfileMu.RLock()
+	if url, ok := c.ghProfileCache[email]; ok {
+		c.ghProfileMu.RUnlock()
+		return url
+	}
+	c.ghProfileMu.RUnlock()
+
+	raw, err := c.harvestGet(ctx, "/candidates?email="+email)
+	if err != nil {
+		return ""
+	}
+
+	var candidates []struct {
+		ID int `json:"id"`
+	}
+	if err := json.Unmarshal(raw, &candidates); err != nil || len(candidates) == 0 {
+		c.ghProfileMu.Lock()
+		if c.ghProfileCache == nil {
+			c.ghProfileCache = make(map[string]string)
+		}
+		c.ghProfileCache[email] = ""
+		c.ghProfileMu.Unlock()
+		return ""
+	}
+
+	profileURL := fmt.Sprintf("https://app.greenhouse.io/people/%d", candidates[0].ID)
+
+	c.ghProfileMu.Lock()
+	if c.ghProfileCache == nil {
+		c.ghProfileCache = make(map[string]string)
+	}
+	c.ghProfileCache[email] = profileURL
+	c.ghProfileMu.Unlock()
+
+	return profileURL
+}
+
+// BulkLookupGHProfiles looks up GH profile URLs for a batch of emails concurrently.
+func (c *greenhouseClient) BulkLookupGHProfiles(ctx context.Context, emails []string) map[string]string {
+	result := make(map[string]string, len(emails))
+	if c.apiKey == "" {
+		return result
+	}
+
+	var uncached []string
+	c.ghProfileMu.RLock()
+	for _, email := range emails {
+		if url, ok := c.ghProfileCache[email]; ok {
+			result[email] = url
+		} else if email != "" {
+			uncached = append(uncached, email)
+		}
+	}
+	c.ghProfileMu.RUnlock()
+
+	if len(uncached) == 0 {
+		return result
+	}
+
+	sem := make(chan struct{}, 10)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, email := range uncached {
+		wg.Add(1)
+		go func(e string) {
+			defer wg.Done()
+			sem <- struct{}{}
+			defer func() { <-sem }()
+
+			url := c.LookupGHProfile(ctx, e)
+			mu.Lock()
+			result[e] = url
+			mu.Unlock()
+		}(email)
+	}
+	wg.Wait()
+
+	return result
 }
 
 // LookupLinkedIn searches Greenhouse for a candidate by email and returns their

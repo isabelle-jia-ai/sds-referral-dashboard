@@ -238,6 +238,23 @@ func dlHiredQuarterly(ctx context.Context) (*dlResponse, error) {
 	`, 60)
 }
 
+func dlHiredReferralList(ctx context.Context) (*dlResponse, error) {
+	return dlClient.query(ctx, `
+		SELECT
+			c.name AS candidate_name,
+			c.primary_email,
+			j.title AS role,
+			EXTRACT(YEAR FROM a.created_at)::int AS year,
+			a.created_at
+		FROM ashby_applications a
+		JOIN ashby_candidates c ON a.candidate_id = c.id
+		JOIN ashby_jobs j ON a.job_id = j.id
+		WHERE `+sdsFilter+` AND `+referralFilter+`
+		AND a.status = 'Hired'
+		ORDER BY a.created_at DESC
+	`, 60)
+}
+
 func dlHiredByRole(ctx context.Context) (*dlResponse, error) {
 	return dlClient.query(ctx, `
 		SELECT

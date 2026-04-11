@@ -18,6 +18,7 @@ func RegisterAPIRoutes(r *gin.Engine) {
 	api.GET("/referrals/hired-quarterly", handleHiredQuarterly())
 	api.GET("/referrals/company-comparison", handleCompanyComparison())
 	api.GET("/referrals/hired-by-role", handleHiredByRole())
+	api.GET("/referrals/hired-list", handleHiredList())
 
 	api.GET("/jobs", handleListJobs())
 
@@ -305,6 +306,40 @@ func handleHiredByRole() gin.HandlerFunc {
 		}
 
 		c.JSON(http.StatusOK, gin.H{"success": true, "roles": roles})
+	}
+}
+
+func handleHiredList() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		resp, err := dlHiredReferralList(c.Request.Context())
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+			return
+		}
+
+		emails := make([]string, 0, len(resp.Rows))
+		for _, row := range resp.Rows {
+			emails = append(emails, toStr(row["primary_email"]))
+		}
+
+		ghProfiles := make(map[string]string)
+		if ghClient != nil && ghClient.apiKey != "" {
+			ghProfiles = ghClient.BulkLookupGHProfiles(c.Request.Context(), emails)
+		}
+
+		hires := make([]gin.H, 0, len(resp.Rows))
+		for _, row := range resp.Rows {
+			email := toStr(row["primary_email"])
+			hires = append(hires, gin.H{
+				"candidate_name": toStr(row["candidate_name"]),
+				"role":           toStr(row["role"]),
+				"year":           toInt(row["year"]),
+				"created_at":     toStr(row["created_at"]),
+				"gh_profile_url": ghProfiles[email],
+			})
+		}
+
+		c.JSON(http.StatusOK, gin.H{"success": true, "hires": hires})
 	}
 }
 
