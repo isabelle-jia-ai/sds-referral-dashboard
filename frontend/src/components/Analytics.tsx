@@ -242,7 +242,11 @@ export default function Analytics({ onStageClick }: { onStageClick: (stage: stri
             </div>
             <p className="text-xs text-gray-400 mb-5">All SDS hires: referral share shown in blue</p>
             <div className="space-y-3 max-h-[480px] overflow-y-auto">
-              {hiredByRole.map((r) => {
+              {[...hiredByRole].sort((a, b) => {
+                const pctA = a.total_hires > 0 ? a.referral_hires / a.total_hires : 0
+                const pctB = b.total_hires > 0 ? b.referral_hires / b.total_hires : 0
+                return pctB - pctA || b.total_hires - a.total_hires
+              }).map((r) => {
                 const pct = r.total_hires > 0 ? Math.round((r.referral_hires / r.total_hires) * 100) : 0
                 const barWidth = (r.total_hires / maxHires) * 100
                 const refShare = r.total_hires > 0 ? (r.referral_hires / r.total_hires) * 100 : 0
