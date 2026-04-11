@@ -86,33 +86,33 @@ export default function AdminPanel() {
               </span>
             </div>
             <p className="text-xs text-gray-400 mb-5">Every candidate hired through a referral, by year</p>
-            <div className={`grid gap-6 ${years.length >= 3 ? 'grid-cols-1 lg:grid-cols-3' : years.length === 2 ? 'grid-cols-1 lg:grid-cols-2' : 'grid-cols-1'}`}>
+            <div className="grid gap-4" style={{ gridTemplateColumns: `repeat(${years.length}, minmax(0, 1fr))` }}>
               {years.map((year) => {
                 const candidates = byYear.get(year) || []
                 return (
                   <div key={year}>
-                    <div className="flex items-center gap-2 mb-3 pb-2 border-b border-gray-100">
-                      <span className="text-base font-bold text-gray-900">{year}</span>
-                      <span className="text-xs text-gray-400">({candidates.length} hires)</span>
+                    <div className="flex items-center gap-1.5 mb-2 pb-1.5 border-b border-gray-100">
+                      <span className="text-sm font-bold text-gray-900">{year}</span>
+                      <span className="text-[11px] text-gray-400">({candidates.length})</span>
                     </div>
-                    <div className="space-y-2.5">
+                    <div className="space-y-1.5">
                       {candidates.map((h, i) => (
-                        <div key={`${h.candidate_name}-${i}`} className="flex items-start gap-2">
-                          <span className="text-emerald-500 mt-0.5 text-xs">&#9679;</span>
+                        <div key={`${h.candidate_name}-${i}`} className="flex items-start gap-1.5">
+                          <span className="text-emerald-500 mt-0.5 text-[10px]">&#9679;</span>
                           <div className="min-w-0">
                             {h.gh_profile_url ? (
                               <a
                                 href={h.gh_profile_url}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline"
+                                className="text-xs font-medium text-blue-600 hover:text-blue-800 hover:underline"
                               >
                                 {h.candidate_name}
                               </a>
                             ) : (
-                              <span className="text-sm font-medium text-gray-900">{h.candidate_name}</span>
+                              <span className="text-xs font-medium text-gray-900">{h.candidate_name}</span>
                             )}
-                            <p className="text-xs text-gray-400 truncate" title={h.role}>{h.role}</p>
+                            <p className="text-[11px] text-gray-400 truncate" title={h.role}>{h.role}</p>
                           </div>
                         </div>
                       ))}
