@@ -62,8 +62,9 @@ func handleListReferrals() gin.HandlerFunc {
 				"referrer_name":  toStr(row["referrer_name"]),
 				"stage":          toStr(row["stage"]),
 				"app_status":     toStr(row["app_status"]),
-				"created_at":     toStr(row["applied_at"]),
-				"company":        toStr(row["company"]),
+			"created_at":     toStr(row["applied_at"]),
+			"hired_at":       toStr(row["hired_at"]),
+			"company":        toStr(row["company"]),
 				"current_title":  toStr(row["current_title"]),
 				"source":         "datalake",
 			})

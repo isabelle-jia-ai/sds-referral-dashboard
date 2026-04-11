@@ -157,6 +157,10 @@ func dlListReferrals(ctx context.Context, stage, role string) (*dlResponse, erro
 			END AS stage,
 			a.status AS app_status,
 			a.created_at AS applied_at,
+			COALESCE(
+				o.latest_version->>'startDate',
+				o.created_at::text
+			) AS hired_at,
 			c.company,
 			c.title AS current_title,
 			a.source->>'title' AS source_name
@@ -164,6 +168,7 @@ func dlListReferrals(ctx context.Context, stage, role string) (*dlResponse, erro
 		JOIN ashby_candidates c ON a.candidate_id = c.id
 		JOIN ashby_jobs j ON a.job_id = j.id
 		LEFT JOIN ashby_users u ON a.credited_to_user_id = u.id AND a.credited_to_user_id != ''
+		LEFT JOIN ashby_offers o ON o.application_id = a.id AND o.acceptance_status = 'Accepted'
 		`+where+`
 		ORDER BY a.created_at DESC
 	`, 60)

@@ -10,6 +10,7 @@ interface Referral {
   stage: string
   app_status: string
   created_at: string
+  hired_at: string | null
   company: string | null
   current_title: string | null
 }
@@ -202,7 +203,9 @@ export default function ReferralDashboard({
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Role</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Referrer</th>
                 <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Stage</th>
-                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                <th className="text-left px-4 py-3 text-xs font-semibold text-gray-500 uppercase tracking-wider">
+                  Date
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -222,7 +225,10 @@ export default function ReferralDashboard({
                     </span>
                   </td>
                   <td className="px-4 py-3 text-sm text-gray-500">
-                    {new Date(r.created_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}
+                    {(() => {
+                      const date = r.stage === 'Hired' && r.hired_at ? r.hired_at : r.created_at
+                      return new Date(date).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+                    })()}
                   </td>
                 </tr>
               ))}
