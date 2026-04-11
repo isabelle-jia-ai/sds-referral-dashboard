@@ -159,7 +159,8 @@ func dlListReferrals(ctx context.Context, stage, role string) (*dlResponse, erro
 			a.created_at AS applied_at,
 			COALESCE(
 				o.latest_version->>'startDate',
-				o.created_at::text
+				o.created_at::text,
+				a.updated_at::text
 			) AS hired_at,
 			c.company,
 			c.title AS current_title,
@@ -168,7 +169,7 @@ func dlListReferrals(ctx context.Context, stage, role string) (*dlResponse, erro
 		JOIN ashby_candidates c ON a.candidate_id = c.id
 		JOIN ashby_jobs j ON a.job_id = j.id
 		LEFT JOIN ashby_users u ON a.credited_to_user_id = u.id AND a.credited_to_user_id != ''
-		LEFT JOIN ashby_offers o ON o.application_id = a.id AND o.acceptance_status = 'Accepted'
+		LEFT JOIN ashby_offers o ON o.application_id = a.id
 		`+where+`
 		ORDER BY a.created_at DESC
 	`, 60)
@@ -232,24 +233,34 @@ func dlHiredQuarterly(ctx context.Context) (*dlResponse, error) {
 	return dlClient.query(ctx, `
 		SELECT
 			to_char(date_trunc('quarter', COALESCE(
-				(o.latest_version->>'startDate')::date,
-				o.created_at::date,
+				(accepted_offer.latest_version->>'startDate')::date,
+				(any_offer.latest_version->>'startDate')::date,
+				accepted_offer.created_at::date,
+				any_offer.created_at::date,
+				a.updated_at::date,
 				a.created_at::date
 			)), 'YYYY-"Q"Q') AS quarter,
 			COUNT(*) AS hired
 		FROM ashby_applications a
 		JOIN ashby_jobs j ON a.job_id = j.id
-		LEFT JOIN ashby_offers o ON o.application_id = a.id AND o.acceptance_status = 'Accepted'
+		LEFT JOIN ashby_offers accepted_offer ON accepted_offer.application_id = a.id AND accepted_offer.acceptance_status = 'Accepted'
+		LEFT JOIN ashby_offers any_offer ON any_offer.application_id = a.id AND accepted_offer.id IS NULL
 		WHERE `+sdsFilter+` AND `+referralFilter+`
 		AND a.status = 'Hired'
 		AND COALESCE(
-			(o.latest_version->>'startDate')::date,
-			o.created_at::date,
+			(accepted_offer.latest_version->>'startDate')::date,
+			(any_offer.latest_version->>'startDate')::date,
+			accepted_offer.created_at::date,
+			any_offer.created_at::date,
+			a.updated_at::date,
 			a.created_at::date
 		) >= '2025-01-01'
 		GROUP BY date_trunc('quarter', COALESCE(
-			(o.latest_version->>'startDate')::date,
-			o.created_at::date,
+			(accepted_offer.latest_version->>'startDate')::date,
+			(any_offer.latest_version->>'startDate')::date,
+			accepted_offer.created_at::date,
+			any_offer.created_at::date,
+			a.updated_at::date,
 			a.created_at::date
 		))
 		ORDER BY quarter
@@ -261,25 +272,37 @@ func dlHiredReferralList(ctx context.Context) (*dlResponse, error) {
 		SELECT
 			c.name AS candidate_name,
 			c.primary_email,
+			a.candidate_id,
 			j.title AS role,
 			COALESCE(
-				o.latest_version->>'startDate',
-				o.created_at::text
+				accepted_offer.latest_version->>'startDate',
+				any_offer.latest_version->>'startDate',
+				accepted_offer.created_at::text,
+				any_offer.created_at::text,
+				a.updated_at::text,
+				a.created_at::text
 			) AS hire_date,
 			EXTRACT(YEAR FROM COALESCE(
-				(o.latest_version->>'startDate')::date,
-				o.created_at::date,
+				(accepted_offer.latest_version->>'startDate')::date,
+				(any_offer.latest_version->>'startDate')::date,
+				accepted_offer.created_at::date,
+				any_offer.created_at::date,
+				a.updated_at::date,
 				a.created_at::date
 			))::int AS year
 		FROM ashby_applications a
 		JOIN ashby_candidates c ON a.candidate_id = c.id
 		JOIN ashby_jobs j ON a.job_id = j.id
-		LEFT JOIN ashby_offers o ON o.application_id = a.id AND o.acceptance_status = 'Accepted'
+		LEFT JOIN ashby_offers accepted_offer ON accepted_offer.application_id = a.id AND accepted_offer.acceptance_status = 'Accepted'
+		LEFT JOIN ashby_offers any_offer ON any_offer.application_id = a.id AND accepted_offer.id IS NULL
 		WHERE `+sdsFilter+` AND `+referralFilter+`
 		AND a.status = 'Hired'
 		ORDER BY COALESCE(
-			(o.latest_version->>'startDate')::date,
-			o.created_at::date,
+			(accepted_offer.latest_version->>'startDate')::date,
+			(any_offer.latest_version->>'startDate')::date,
+			accepted_offer.created_at::date,
+			any_offer.created_at::date,
+			a.updated_at::date,
 			a.created_at::date
 		) DESC
 	`, 60)

@@ -319,25 +319,19 @@ func handleHiredList() gin.HandlerFunc {
 			return
 		}
 
-		emails := make([]string, 0, len(resp.Rows))
-		for _, row := range resp.Rows {
-			emails = append(emails, toStr(row["primary_email"]))
-		}
-
-		ghProfiles := make(map[string]string)
-		if ghClient != nil && ghClient.apiKey != "" {
-			ghProfiles = ghClient.BulkLookupGHProfiles(c.Request.Context(), emails)
-		}
-
 		hires := make([]gin.H, 0, len(resp.Rows))
 		for _, row := range resp.Rows {
-			email := toStr(row["primary_email"])
+			candidateID := toStr(row["candidate_id"])
+			profileURL := ""
+			if candidateID != "" {
+				profileURL = "https://app.ashbyhq.com/candidates/" + candidateID
+			}
 			hires = append(hires, gin.H{
 				"candidate_name": toStr(row["candidate_name"]),
 				"role":           toStr(row["role"]),
 				"year":           toInt(row["year"]),
 				"hire_date":      toStr(row["hire_date"]),
-				"gh_profile_url": ghProfiles[email],
+				"gh_profile_url": profileURL,
 			})
 		}
 
