@@ -16,7 +16,7 @@ interface HiredCandidate {
   candidate_name: string
   role: string
   year: number
-  created_at: string
+  hire_date: string
   gh_profile_url: string
 }
 

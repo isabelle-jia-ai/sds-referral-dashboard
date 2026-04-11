@@ -334,7 +334,7 @@ func handleHiredList() gin.HandlerFunc {
 				"candidate_name": toStr(row["candidate_name"]),
 				"role":           toStr(row["role"]),
 				"year":           toInt(row["year"]),
-				"created_at":     toStr(row["created_at"]),
+				"hire_date":      toStr(row["hire_date"]),
 				"gh_profile_url": ghProfiles[email],
 			})
 		}

@@ -226,14 +226,27 @@ func dlQuarterlyTrends(ctx context.Context) (*dlResponse, error) {
 func dlHiredQuarterly(ctx context.Context) (*dlResponse, error) {
 	return dlClient.query(ctx, `
 		SELECT
-			to_char(date_trunc('quarter', a.created_at), 'YYYY-"Q"Q') AS quarter,
+			to_char(date_trunc('quarter', COALESCE(
+				(o.latest_version->>'startDate')::date,
+				o.created_at::date,
+				a.created_at::date
+			)), 'YYYY-"Q"Q') AS quarter,
 			COUNT(*) AS hired
 		FROM ashby_applications a
 		JOIN ashby_jobs j ON a.job_id = j.id
+		LEFT JOIN ashby_offers o ON o.application_id = a.id AND o.acceptance_status = 'Accepted'
 		WHERE `+sdsFilter+` AND `+referralFilter+`
 		AND a.status = 'Hired'
-		AND a.created_at >= '2025-01-01'
-		GROUP BY date_trunc('quarter', a.created_at)
+		AND COALESCE(
+			(o.latest_version->>'startDate')::date,
+			o.created_at::date,
+			a.created_at::date
+		) >= '2025-01-01'
+		GROUP BY date_trunc('quarter', COALESCE(
+			(o.latest_version->>'startDate')::date,
+			o.created_at::date,
+			a.created_at::date
+		))
 		ORDER BY quarter
 	`, 60)
 }
@@ -244,14 +257,26 @@ func dlHiredReferralList(ctx context.Context) (*dlResponse, error) {
 			c.name AS candidate_name,
 			c.primary_email,
 			j.title AS role,
-			EXTRACT(YEAR FROM a.created_at)::int AS year,
-			a.created_at
+			COALESCE(
+				o.latest_version->>'startDate',
+				o.created_at::text
+			) AS hire_date,
+			EXTRACT(YEAR FROM COALESCE(
+				(o.latest_version->>'startDate')::date,
+				o.created_at::date,
+				a.created_at::date
+			))::int AS year
 		FROM ashby_applications a
 		JOIN ashby_candidates c ON a.candidate_id = c.id
 		JOIN ashby_jobs j ON a.job_id = j.id
+		LEFT JOIN ashby_offers o ON o.application_id = a.id AND o.acceptance_status = 'Accepted'
 		WHERE `+sdsFilter+` AND `+referralFilter+`
 		AND a.status = 'Hired'
-		ORDER BY a.created_at DESC
+		ORDER BY COALESCE(
+			(o.latest_version->>'startDate')::date,
+			o.created_at::date,
+			a.created_at::date
+		) DESC
 	`, 60)
 }
 
